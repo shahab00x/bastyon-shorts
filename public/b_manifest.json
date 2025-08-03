@@ -4,6 +4,7 @@
   "description": "Short video player for Bastyon #bshorts content",
   "author": "PXN76kJG5sCGTwMpRfXH5oqkDzJQKNsYk4",
   "scope": "bshorts.bastyon.ir",
+  "version": "0.1.0",
   "permissions": [
     "account",
     "notifications",

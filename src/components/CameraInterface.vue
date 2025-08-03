@@ -284,7 +284,7 @@ onUnmounted(() => {
           class="h-14 w-14 flex items-center justify-center rounded-full bg-blue-600 text-white"
           @click="uploadVideo"
         >
-          <div v-if="isUploading" class="i-carbon-loading animate-spin" />
+          <div v-if="isUploading" class="i-carbon-renew animate-spin" />
           <div v-else class="i-carbon-upload" />
         </button>
       </div>

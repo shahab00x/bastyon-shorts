@@ -56,7 +56,7 @@ onMounted(() => {
     <!-- Initialization loading -->
     <div v-if="!isInitialized && !initError" class="h-full flex items-center justify-center">
       <div class="text-center">
-        <div class="i-carbon-loading mb-4 animate-spin text-4xl" />
+        <div class="i-carbon-renew mb-4 animate-spin text-4xl" />
         <p class="text-lg">
           Initializing BShorts...
         </p>

@@ -248,7 +248,7 @@ onUnmounted(() => {
   <div class="video-feed h-screen w-screen overflow-hidden bg-black">
     <!-- Loading state -->
     <div v-if="isLoading" class="h-full flex items-center justify-center">
-      <div class="i-carbon-loading animate-spin text-4xl text-white" />
+      <div class="i-carbon-renew animate-spin text-4xl text-white" />
     </div>
 
     <!-- Error state -->
