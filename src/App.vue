@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { SdkService } from '~/composables/sdkService'
 import VideoFeed from '~/components/VideoFeed.vue'
 import CameraInterface from '~/components/CameraInterface.vue'
 
@@ -11,7 +10,7 @@ const initError = ref<string | null>(null)
 // Initialize the app
 async function initApp() {
   try {
-    await SdkService.init()
+    // Simple initialization without SDK
     isInitialized.value = true
   }
   catch (err) {

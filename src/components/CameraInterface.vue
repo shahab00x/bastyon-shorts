@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { SdkService } from '~/composables/sdkService'
 
 const emit = defineEmits(['close'])
 
@@ -96,19 +95,9 @@ async function uploadVideo() {
   isUploading.value = true
 
   try {
-    // Use the Bastyon SDK to upload the video
-    // Note: This is a simplified implementation - in a real app, you would need to properly
-    // handle the video data and add metadata like hashtags
-    console.log('Uploading video with #bshorts hashtag')
+    console.log('Uploading video')
 
-    // Example of how you might use the SDK:
-    // const result = await SdkService.rpc('upload', [{
-    //   videoData: recordedVideo.value,
-    //   hashtags: ['#bshorts'],
-    //   description: 'Uploaded via BShorts app'
-    // }])
-
-    // For now, we'll simulate the upload process
+    // Simulate the upload process
     await new Promise(resolve => setTimeout(resolve, 2000))
 
     // Close camera interface after successful upload
@@ -135,17 +124,9 @@ function discardRecording() {
 // Select video from gallery
 async function selectFromGallery() {
   try {
-    // Request gallery permission with error handling
-    try {
-      await SdkService.checkAndRequestPermissions(['gallery'])
-    }
-    catch (permissionError) {
-      console.warn('Gallery permission request failed:', permissionError)
-      // Continue without blocking the app initialization
-    }
+    console.log('Gallery selection would be handled by browser permissions')
 
-    // In a real implementation, this would use the Bastyon SDK to select a video from gallery
-    // For now, we'll simulate the selection
+    // Simulate the selection
     error.value = 'Gallery selection not implemented in this demo.'
   }
   catch (err) {

@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import VideoPlayer from './VideoPlayer.vue'
-import { SdkService } from '~/composables/sdkService'
 
 interface Video {
   id: string
@@ -30,21 +29,6 @@ async function initVideoFeed() {
   error.value = null
 
   try {
-    // Request necessary permissions
-    const permissions = [
-      'account',
-      'messaging',
-      'sign',
-    ]
-
-    try {
-      await SdkService.checkAndRequestPermissions(permissions)
-    }
-    catch (permissionError) {
-      console.warn('Some permissions could not be granted:', permissionError)
-      // Continue with initialization even if some permissions are denied
-    }
-
     // Fetch videos with hashtag #bshorts
     await fetchVideos()
   }
@@ -60,154 +44,165 @@ async function initVideoFeed() {
 // Fetch videos with hashtag #bshorts
 async function fetchVideos() {
   try {
+    // Use our backend API service instead of direct SDK calls
     let apiVideos = []
 
     try {
-      // Try different methods to get content from Bastyon
-      // Based on typical blockchain/social media APIs, try these methods:
+      // Test if basic API calls work
+      const nodeInfo = await ApiService.getNodeInfo()
+      console.log('Node info:', nodeInfo)
 
-      // Method 1: Try getlastposts or similar
+      // Try the search method with correct parameters based on documentation
       try {
-        const postsResult = await SdkService.rpc('getlastposts', {
-          count: 50,
-          lang: 'en',
-        })
+        const result = await ApiService.search('#bshorts', 'content', 0, 50)
 
-        if (postsResult && Array.isArray(postsResult)) {
-          apiVideos = postsResult.filter((post: any) => {
-            // Filter for posts with #bshorts hashtag and video content
-            const hasHashtag = post.tags?.includes('bshorts')
-              || post.message?.includes('#bshorts')
-              || post.text?.includes('#bshorts')
-            const isVideo = post.type === 'video'
-              || post.url?.match(/\.(mp4|mov|avi|webm)$/i)
-              || post.contentType === 'video'
-            return hasHashtag && isVideo
-          })
-        }
+        // Safely extract videos from the result
+        apiVideos = Array.isArray((result as any)?.data?.results)
+          ? (result as any).data.results
+          : Array.isArray((result as any)?.data)
+            ? (result as any).data
+            : []
 
-        console.log('Posts result:', postsResult)
+        console.log('Search results:', result)
       }
-      catch (postsError) {
-        console.warn('getlastposts failed:', postsError)
+      catch (searchError) {
+        console.warn('Search method failed:', searchError)
 
-        // Method 2: Try getpostsbytag if available
+        // Try with minimal parameters
         try {
-          const tagResult = await SdkService.rpc('getpostsbytag', {
-            tag: 'bshorts',
-            count: 50,
-          })
+          const simpleResult = await ApiService.search('#bshorts')
 
-          if (tagResult && Array.isArray(tagResult)) {
-            apiVideos = tagResult.filter((post: any) => {
-              const isVideo = post.type === 'video'
-                || post.url?.match(/\.(mp4|mov|avi|webm)$/i)
-                || post.contentType === 'video'
-              return isVideo
-            })
-          }
+          // Safely extract videos from the result
+          apiVideos = Array.isArray((simpleResult as any)?.data?.results)
+            ? (simpleResult as any).data.results
+            : Array.isArray((simpleResult as any)?.data)
+              ? (simpleResult as any).data
+              : []
 
-          console.log('Tag result:', tagResult)
+          console.log('Simple search results:', simpleResult)
         }
-        catch (tagError) {
-          console.warn('getpostsbytag failed:', tagError)
-
-          // Method 3: Try a more generic content search
-          try {
-            const contentResult = await SdkService.rpc('getcontent', {
-              limit: 50,
-              type: 'video',
-            })
-
-            if (contentResult && Array.isArray(contentResult)) {
-              apiVideos = contentResult.filter((post: any) => {
-                return post.tags?.includes('bshorts')
-                  || post.message?.includes('#bshorts')
-                  || post.text?.includes('#bshorts')
-              })
-            }
-
-            console.log('Content result:', contentResult)
-          }
-          catch (contentError) {
-            console.warn('getcontent failed:', contentError)
-          }
+        catch (simpleSearchError) {
+          console.warn('Simple search also failed:', simpleSearchError)
+          // Fallback to mock data if both search methods fail
+          apiVideos = [
+            {
+              id: '1',
+              url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+              thumbnail: 'https://peach.blender.org/wp-content/uploads/bbb-splash.png',
+              title: 'Big Buck Bunny',
+              description: 'A large and lovable rabbit deals with three tiny bullies.',
+              author: {
+                name: 'Blender Foundation',
+                address: 'blender-foundation',
+              },
+              duration: 596,
+              likes: 1200,
+              comments: 42,
+              timestamp: Date.now() - 86400000, // 1 day ago
+            },
+            {
+              id: '2',
+              url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+              thumbnail: 'https://peach.blender.org/wp-content/uploads/ed-splash.png',
+              title: 'Elephants Dream',
+              description: 'The story of two strange characters exploring a capricious and seemingly infinite machine.',
+              author: {
+                name: 'Blender Foundation',
+                address: 'blender-foundation',
+              },
+              duration: 653,
+              likes: 950,
+              comments: 38,
+              timestamp: Date.now() - 172800000, // 2 days ago
+            },
+            {
+              id: '3',
+              url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+              thumbnail: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerBlazes.jpg',
+              title: 'For Bigger Blazes',
+              description: 'A movie trailer featuring a giant monster robot.',
+              author: {
+                name: 'Google',
+                address: 'google-sample',
+              },
+              duration: 15,
+              likes: 520,
+              comments: 15,
+              timestamp: Date.now() - 259200000, // 3 days ago
+            },
+          ]
         }
       }
     }
-    catch (rpcError) {
-      console.warn('All RPC calls failed, using mock data:', rpcError)
+    catch (nodeError) {
+      console.warn('Node info failed:', nodeError)
+      // Continue with search even if node info fails
     }
 
-    const transformedVideos: Video[] = apiVideos
-      .map((video: any) => ({
-        id: video.id || video.txid || video.hash || Math.random().toString(36).substr(2, 9),
-        url: video.url || video.videoUrl || video.content?.url || '',
-        thumbnail: video.thumbnail || video.previewImage || video.preview || '',
-        title: video.title || video.caption || 'Untitled Video',
-        description: video.description || video.message || video.text || '',
-        author: {
-          name: video.author?.name || video.username || video.address?.substr(0, 8) || 'Unknown User',
-          address: video.author?.address || video.address || '',
-        },
-        duration: video.duration || 60,
-        likes: video.likes || video.score || video.reputation || 0,
-        comments: video.comments || video.commentCount || 0,
-        timestamp: video.timestamp || video.time || video.created || Date.now(),
-      }))
-      .filter((video) => {
-        // Filter for valid videos with URLs and reasonable duration
-        return video.url && video.duration < 300 // Under 5 minutes
-      })
+    // Transform API videos to our Video interface
+    const transformedVideos = apiVideos.map((video: any) => ({
+      id: video.id || video.txid || Math.random().toString(36).substr(2, 9),
+      url: video.url || video.videoUrl || '',
+      thumbnail: video.thumbnail || video.previewUrl || '',
+      title: video.title || 'Untitled Video',
+      description: video.description || '',
+      author: {
+        name: video.author?.name || video.username || 'Unknown Author',
+        address: video.author?.address || video.userAddress || '',
+      },
+      duration: video.duration || 0,
+      likes: video.likes || video.likeCount || 0,
+      comments: video.comments || video.commentCount || 0,
+      timestamp: video.timestamp || video.created || Date.now(),
+    }))
 
     // If we don't have any API videos, use mock data
     if (transformedVideos.length === 0) {
-      console.log('No API videos found, using mock data')
       const mockVideos: Video[] = [
         {
           id: '1',
-          url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
-          thumbnail: '',
-          title: 'Beautiful Sunset #bshorts',
-          description: 'Watching the sunset at the beach. Nature is amazing! #bshorts #nature',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          thumbnail: 'https://peach.blender.org/wp-content/uploads/bbb-splash.png',
+          title: 'Big Buck Bunny',
+          description: 'A large and lovable rabbit deals with three tiny bullies.',
           author: {
-            name: 'traveler_jane',
-            address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG',
+            name: 'Blender Foundation',
+            address: 'blender-foundation',
           },
-          duration: 45,
+          duration: 596,
           likes: 1200,
           comments: 42,
-          timestamp: Date.now() - 3600000,
+          timestamp: Date.now() - 86400000, // 1 day ago
         },
         {
           id: '2',
-          url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4',
-          thumbnail: '',
-          title: 'Cooking Tutorial #bshorts',
-          description: 'Learn how to make the perfect pasta in just 10 minutes! #bshorts #cooking',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+          thumbnail: 'https://peach.blender.org/wp-content/uploads/ed-splash.png',
+          title: 'Elephants Dream',
+          description: 'The story of two strange characters exploring a capricious and seemingly infinite machine.',
           author: {
-            name: 'chef_mario',
-            address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydH',
+            name: 'Blender Foundation',
+            address: 'blender-foundation',
           },
-          duration: 75,
-          likes: 850,
-          comments: 28,
-          timestamp: Date.now() - 7200000,
+          duration: 653,
+          likes: 950,
+          comments: 38,
+          timestamp: Date.now() - 172800000, // 2 days ago
         },
         {
           id: '3',
-          url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_5mb.mp4',
-          thumbnail: '',
-          title: 'Dance Challenge #bshorts',
-          description: 'Can you do this dance? Join the challenge! #bshorts #dance #challenge',
+          url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+          thumbnail: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerBlazes.jpg',
+          title: 'For Bigger Blazes',
+          description: 'A movie trailer featuring a giant monster robot.',
           author: {
-            name: 'dance_crew',
-            address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydI',
+            name: 'Google',
+            address: 'google-sample',
           },
-          duration: 30,
-          likes: 3200,
-          comments: 156,
-          timestamp: Date.now() - 10800000,
+          duration: 15,
+          likes: 520,
+          comments: 15,
+          timestamp: Date.now() - 259200000, // 3 days ago
         },
       ]
 
@@ -215,62 +210,14 @@ async function fetchVideos() {
     }
     else {
       videos.value = transformedVideos
-      console.log(`Loaded ${transformedVideos.length} videos from API`)
     }
   }
   catch (err) {
     console.error('Error fetching videos:', err)
-
-    // Fallback to mock data if everything fails
-    const mockVideos: Video[] = [
-      {
-        id: '1',
-        url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
-        thumbnail: '',
-        title: 'Beautiful Sunset #bshorts',
-        description: 'Watching the sunset at the beach. Nature is amazing! #bshorts #nature',
-        author: {
-          name: 'traveler_jane',
-          address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG',
-        },
-        duration: 45,
-        likes: 1200,
-        comments: 42,
-        timestamp: Date.now() - 3600000,
-      },
-      {
-        id: '2',
-        url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4',
-        thumbnail: '',
-        title: 'Cooking Tutorial #bshorts',
-        description: 'Learn how to make the perfect pasta in just 10 minutes! #bshorts #cooking',
-        author: {
-          name: 'chef_mario',
-          address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydH',
-        },
-        duration: 75,
-        likes: 850,
-        comments: 28,
-        timestamp: Date.now() - 7200000,
-      },
-      {
-        id: '3',
-        url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_5mb.mp4',
-        thumbnail: '',
-        title: 'Dance Challenge #bshorts',
-        description: 'Can you do this dance? Join the challenge! #bshorts #dance #challenge',
-        author: {
-          name: 'dance_crew',
-          address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydI',
-        },
-        duration: 30,
-        likes: 3200,
-        comments: 156,
-        timestamp: Date.now() - 10800000,
-      },
-    ]
-
-    videos.value = mockVideos
+    error.value = 'Failed to load videos. Please try again later.'
+  }
+  finally {
+    isLoading.value = false
   }
 }
 
@@ -288,101 +235,73 @@ function handleTouchEnd(e: TouchEvent) {
 }
 
 function handleSwipe() {
-  const diffY = startY - endY
-  const swipeThreshold = 50
+  const diff = startY - endY
+  const minSwipeDistance = 50
 
-  // Swipe up - next video
-  if (diffY > swipeThreshold && currentVideoIndex.value < videos.value.length - 1)
-    currentVideoIndex.value++
-  // Swipe down - previous video
-  else if (diffY < -swipeThreshold && currentVideoIndex.value > 0)
-    currentVideoIndex.value--
+  if (Math.abs(diff) > minSwipeDistance) {
+    if (diff > 0) {
+      // Swipe up - next video
+      if (currentVideoIndex.value < videos.value.length - 1)
+        currentVideoIndex.value++
+    }
+    else {
+      // Swipe down - previous video
+      if (currentVideoIndex.value > 0)
+        currentVideoIndex.value--
+    }
+  }
 }
 
 // Keyboard navigation for testing
 function handleKeyDown(e: KeyboardEvent) {
-  if (e.key === 'ArrowUp' && currentVideoIndex.value < videos.value.length - 1)
-    currentVideoIndex.value++
-  else if (e.key === 'ArrowDown' && currentVideoIndex.value > 0)
-    currentVideoIndex.value--
+  if (e.key === 'ArrowUp') {
+    if (currentVideoIndex.value > 0)
+      currentVideoIndex.value--
+  }
+  else if (e.key === 'ArrowDown') {
+    if (currentVideoIndex.value < videos.value.length - 1)
+      currentVideoIndex.value++
+  }
 }
 
 // Video player events
-async function handleLike(videoId: string) {
-  try {
-    console.log('Like video:', videoId)
-    // Try different methods for liking content
-    const likeResult = await SdkService.rpc('score', {
-      txid: videoId,
-      value: 5, // Usually a value between 1-5
-    })
-    console.log('Like result:', likeResult)
-  }
-  catch (error) {
-    console.error('Error liking video:', error)
-  }
+function handleLike(videoId: string) {
+  console.log('Like video:', videoId)
+  // In a real app, you would send this to your backend
+  const video = videos.value.find(v => v.id === videoId)
+  if (video)
+    video.likes++
 }
 
-async function handleComment(videoId: string) {
-  try {
-    console.log('Comment on video:', videoId)
-    // Get comments for the video
-    const commentsResult = await SdkService.rpc('getcomments', {
-      postid: videoId,
-      parentid: '',
-      count: 10,
-    })
-    console.log('Comments result:', commentsResult)
-  }
-  catch (error) {
-    console.error('Error fetching comments:', error)
-  }
+function handleComment(videoId: string) {
+  console.log('Comment on video:', videoId)
+  // In a real app, you would open a comment modal or navigate to comments
 }
 
-async function handleShare(videoId: string) {
-  try {
-    console.log('Share video:', videoId)
-    // In Bastyon, sharing might involve reposting or creating a new post
-    // This would typically open the sharing interface
-    const shareResult = await SdkService.rpc('share', {
-      txid: videoId,
-      message: 'Check out this video! #bshorts',
-    })
-    console.log('Share result:', shareResult)
-  }
-  catch (error) {
-    console.error('Error sharing video:', error)
-  }
+function handleShare(videoId: string) {
+  console.log('Share video:', videoId)
+  // In a real app, you would open a share dialog
 }
 
-async function handleFollow(authorAddress: string) {
-  try {
-    console.log('Follow author:', authorAddress)
-    // Subscribe to the author
-    const followResult = await SdkService.rpc('subscribe', {
-      address: authorAddress,
-    })
-    console.log('Follow result:', followResult)
-  }
-  catch (error) {
-    console.error('Error following author:', error)
-  }
+function handleFollow(authorAddress: string) {
+  console.log('Follow author:', authorAddress)
+  // In a real app, you would send this to your backend
 }
 
 onMounted(() => {
   initVideoFeed()
 
   // Add event listeners
-  window.addEventListener('touchstart', handleTouchStart, { passive: true })
-  window.addEventListener('touchend', handleTouchEnd, { passive: true })
   window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('touchstart', handleTouchStart)
+  window.addEventListener('touchend', handleTouchEnd)
 })
 
-onUnmounted(() => {
-  // Remove event listeners
+onBeforeUnmount(() => {
+  // Clean up event listeners
+  window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('touchstart', handleTouchStart)
   window.removeEventListener('touchend', handleTouchEnd)
-  window.removeEventListener('keydown', handleKeyDown)
 })
 </script>
 
@@ -409,48 +328,31 @@ onUnmounted(() => {
 
     <!-- Video feed -->
     <div v-else-if="videos.length > 0" class="relative h-full">
-      <!-- Video players -->
-      <div
-        v-for="(video, index) in videos"
-        :key="video.id"
-        class="absolute inset-0 transition-transform duration-300" :class="[
-          index === currentVideoIndex ? 'translate-y-0'
-          : index < currentVideoIndex ? '-translate-y-full' : 'translate-y-full',
-        ]"
-      >
-        <VideoPlayer
-          :video="video"
-          :is-active="index === currentVideoIndex"
-          @like="handleLike"
-          @comment="handleComment"
-          @share="handleShare"
-          @follow="handleFollow"
+      <VideoPlayer
+        :video="videos[currentVideoIndex]"
+        @like="handleLike"
+        @comment="handleComment"
+        @share="handleShare"
+        @follow="handleFollow"
+      />
+
+      <!-- Video indicators -->
+      <div class="absolute right-4 top-1/2 flex flex-col gap-2 -translate-y-1/2">
+        <div
+          v-for="(video, index) in videos"
+          :key="video.id"
+          class="h-1.5 w-1.5 rounded-full bg-white bg-opacity-50 transition-all duration-300"
+          :class="{ 'bg-white bg-opacity-100 scale-125': index === currentVideoIndex }"
         />
-      </div>
-
-      <!-- Video counter -->
-      <div class="absolute left-4 top-4 rounded bg-black bg-opacity-50 px-2 py-1 text-white font-bold">
-        {{ currentVideoIndex + 1 }} / {{ videos.length }}
-      </div>
-
-      <!-- Instructions for mobile -->
-      <div class="absolute right-4 top-4 rounded bg-black bg-opacity-50 px-2 py-1 text-xs text-white">
-        Swipe up/down to navigate
       </div>
     </div>
 
-    <!-- Empty state -->
+    <!-- No videos state -->
     <div v-else class="h-full flex flex-col items-center justify-center p-4">
-      <div class="i-carbon-video mb-4 text-4xl text-white" />
-      <p class="mb-4 text-center text-white">
-        No videos found. Try again later.
+      <div class="i-carbon-video-off mb-4 text-4xl text-gray-500" />
+      <p class="text-center text-white">
+        No videos found. Try a different hashtag.
       </p>
-      <button
-        class="rounded-full bg-blue-600 px-6 py-2 text-white"
-        @click="initVideoFeed"
-      >
-        Refresh
-      </button>
     </div>
   </div>
 </template>

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { SdkService } from '~/composables'
+function openExternalLink(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
 </script>
 
 <template>
@@ -13,7 +15,7 @@ import { SdkService } from '~/composables'
       rel="noreferrer"
       target="_blank"
       title="GitHub"
-      @click="SdkService.openExternalLink('https://github.com/DaniilKimlb/bastyon-miniapp-vue-template')"
+      @click="openExternalLink('https://github.com/DaniilKimlb/bastyon-miniapp-vue-template')"
     />
   </nav>
 </template>

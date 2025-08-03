@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@vueuse/core": "^10.9.0",
+    "axios": "^1.11.0",
     "vue": "^3.4.27",
     "vue-router": "^4.3.2"
   },
