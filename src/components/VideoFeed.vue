@@ -62,26 +62,57 @@ async function initVideoFeed() {
 // Fetch videos with hashtag #bshorts
 async function fetchVideos() {
   try {
-    // Use the Bastyon SDK to fetch videos with the #bshorts hashtag
-    // Note: The search RPC method might not be available or might have a different signature
-    // We'll try to use it, but fall back to mock data if it fails
+    // Update the search method call to match the documentation
     let apiVideos = []
 
     try {
-      const result = await SdkService.rpc('search', [{
-        keyword: '#bshorts',
-        type: 'content',
-        pageStart: 0,
-        pageSize: 50,
-      }])
+      // Test if basic RPC calls work
+      const nodeInfo = await SdkService.rpc('getnodeinfo')
+      console.log('Node info:', nodeInfo)
 
-      // Transform the API response to our Video format
-      // Note: This is a simplified transformation - in a real implementation,
-      // you would need to properly parse the API response based on its actual structure
-      apiVideos = (result as any)?.data?.results || []
+      // Try the search method with correct parameters based on documentation
+      try {
+        const result = await SdkService.rpc('search', {
+          keyword: '#bshorts',
+          type: 'content',
+          pageStart: 0,
+          pageSize: 50,
+        })
+
+        // Safely extract videos from the result
+        apiVideos = Array.isArray((result as any)?.data?.results)
+          ? (result as any).data.results
+          : Array.isArray((result as any)?.data)
+            ? (result as any).data
+            : []
+
+        console.log('Search results:', result)
+      }
+      catch (searchError) {
+        console.warn('Search method failed:', searchError)
+
+        // Try with minimal parameters
+        try {
+          const simpleResult = await SdkService.rpc('search', {
+            keyword: '#bshorts',
+          })
+
+          // Safely extract videos from the result
+          apiVideos = Array.isArray((simpleResult as any)?.data?.results)
+            ? (simpleResult as any).data.results
+            : Array.isArray((simpleResult as any)?.data)
+              ? (simpleResult as any).data
+              : []
+
+          console.log('Simple search results:', simpleResult)
+        }
+        catch (simpleSearchError) {
+          console.warn('Simple search also failed:', simpleSearchError)
+        }
+      }
     }
     catch (rpcError) {
-      console.warn('Failed to fetch videos from Bastyon API, using mock data:', rpcError)
+      console.warn('Basic RPC calls failed, using mock data:', rpcError)
       // If the RPC call fails, we'll use mock data
     }
 

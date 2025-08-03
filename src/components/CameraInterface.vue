@@ -135,8 +135,14 @@ function discardRecording() {
 // Select video from gallery
 async function selectFromGallery() {
   try {
-    // Request gallery permission
-    await SdkService.checkAndRequestPermissions(['gallery'])
+    // Request gallery permission with error handling
+    try {
+      await SdkService.checkAndRequestPermissions(['gallery'])
+    }
+    catch (permissionError) {
+      console.warn('Gallery permission request failed:', permissionError)
+      // Continue without blocking the app initialization
+    }
 
     // In a real implementation, this would use the Bastyon SDK to select a video from gallery
     // For now, we'll simulate the selection
