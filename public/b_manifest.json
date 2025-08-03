@@ -7,12 +7,9 @@
   "version": "0.1.0",
   "permissions": [
     "account",
-    "notifications",
     "messaging",
     "payment",
     "sign",
-    "camera",
-    "gallery",
-    "posts"
+    "mobilecamera"
   ]
 }
