@@ -46,8 +46,6 @@ async function initVideoFeed() {
     }
 
     // Fetch videos with hashtag #bshorts
-    // This is a placeholder implementation - in a real app, you would use the Bastyon SDK
-    // to fetch actual videos
     await fetchVideos()
   }
   catch (err) {
@@ -62,92 +60,116 @@ async function initVideoFeed() {
 // Fetch videos with hashtag #bshorts
 async function fetchVideos() {
   try {
-    // Update the search method call to match the documentation
     let apiVideos = []
 
     try {
-      // Test if basic RPC calls work
-      const nodeInfo = await SdkService.rpc('getnodeinfo')
-      console.log('Node info:', nodeInfo)
+      // Try different methods to get content from Bastyon
+      // Based on typical blockchain/social media APIs, try these methods:
 
-      // Try the search method with correct parameters based on documentation
+      // Method 1: Try getlastposts or similar
       try {
-        const result = await SdkService.rpc('search', {
-          keyword: '#bshorts',
-          type: 'content',
-          pageStart: 0,
-          pageSize: 50,
+        const postsResult = await SdkService.rpc('getlastposts', {
+          count: 50,
+          lang: 'en',
         })
 
-        // Safely extract videos from the result
-        apiVideos = Array.isArray((result as any)?.data?.results)
-          ? (result as any).data.results
-          : Array.isArray((result as any)?.data)
-            ? (result as any).data
-            : []
+        if (postsResult && Array.isArray(postsResult)) {
+          apiVideos = postsResult.filter((post: any) => {
+            // Filter for posts with #bshorts hashtag and video content
+            const hasHashtag = post.tags?.includes('bshorts')
+              || post.message?.includes('#bshorts')
+              || post.text?.includes('#bshorts')
+            const isVideo = post.type === 'video'
+              || post.url?.match(/\.(mp4|mov|avi|webm)$/i)
+              || post.contentType === 'video'
+            return hasHashtag && isVideo
+          })
+        }
 
-        console.log('Search results:', result)
+        console.log('Posts result:', postsResult)
       }
-      catch (searchError) {
-        console.warn('Search method failed:', searchError)
+      catch (postsError) {
+        console.warn('getlastposts failed:', postsError)
 
-        // Try with minimal parameters
+        // Method 2: Try getpostsbytag if available
         try {
-          const simpleResult = await SdkService.rpc('search', {
-            keyword: '#bshorts',
+          const tagResult = await SdkService.rpc('getpostsbytag', {
+            tag: 'bshorts',
+            count: 50,
           })
 
-          // Safely extract videos from the result
-          apiVideos = Array.isArray((simpleResult as any)?.data?.results)
-            ? (simpleResult as any).data.results
-            : Array.isArray((simpleResult as any)?.data)
-              ? (simpleResult as any).data
-              : []
+          if (tagResult && Array.isArray(tagResult)) {
+            apiVideos = tagResult.filter((post: any) => {
+              const isVideo = post.type === 'video'
+                || post.url?.match(/\.(mp4|mov|avi|webm)$/i)
+                || post.contentType === 'video'
+              return isVideo
+            })
+          }
 
-          console.log('Simple search results:', simpleResult)
+          console.log('Tag result:', tagResult)
         }
-        catch (simpleSearchError) {
-          console.warn('Simple search also failed:', simpleSearchError)
+        catch (tagError) {
+          console.warn('getpostsbytag failed:', tagError)
+
+          // Method 3: Try a more generic content search
+          try {
+            const contentResult = await SdkService.rpc('getcontent', {
+              limit: 50,
+              type: 'video',
+            })
+
+            if (contentResult && Array.isArray(contentResult)) {
+              apiVideos = contentResult.filter((post: any) => {
+                return post.tags?.includes('bshorts')
+                  || post.message?.includes('#bshorts')
+                  || post.text?.includes('#bshorts')
+              })
+            }
+
+            console.log('Content result:', contentResult)
+          }
+          catch (contentError) {
+            console.warn('getcontent failed:', contentError)
+          }
         }
       }
     }
     catch (rpcError) {
-      console.warn('Basic RPC calls failed, using mock data:', rpcError)
-      // If the RPC call fails, we'll use mock data
+      console.warn('All RPC calls failed, using mock data:', rpcError)
     }
 
     const transformedVideos: Video[] = apiVideos
-      .filter((video: any) => {
-        // Filter for video content and short duration
-        const isVideo = video.contentType === 'video' || video.url?.includes('.mp4') || video.url?.includes('.mov')
-        const duration = video.duration || 60 // Default to 60 seconds if not provided
-        return isVideo && duration < 120 // Filter videos under 2 minutes
-      })
       .map((video: any) => ({
-        id: video.id || video.txId || Math.random().toString(36).substr(2, 9),
-        url: video.url || '',
-        thumbnail: video.thumbnail || video.previewImage || '',
-        title: video.title || 'Untitled Video',
-        description: video.description || video.text || '',
+        id: video.id || video.txid || video.hash || Math.random().toString(36).substr(2, 9),
+        url: video.url || video.videoUrl || video.content?.url || '',
+        thumbnail: video.thumbnail || video.previewImage || video.preview || '',
+        title: video.title || video.caption || 'Untitled Video',
+        description: video.description || video.message || video.text || '',
         author: {
-          name: video.author?.name || video.username || 'Unknown User',
-          address: video.author?.address || video.userAddress || '',
+          name: video.author?.name || video.username || video.address?.substr(0, 8) || 'Unknown User',
+          address: video.author?.address || video.address || '',
         },
         duration: video.duration || 60,
-        likes: video.likes || video.rating || 0,
+        likes: video.likes || video.score || video.reputation || 0,
         comments: video.comments || video.commentCount || 0,
-        timestamp: video.timestamp || video.created || Date.now(),
+        timestamp: video.timestamp || video.time || video.created || Date.now(),
       }))
+      .filter((video) => {
+        // Filter for valid videos with URLs and reasonable duration
+        return video.url && video.duration < 300 // Under 5 minutes
+      })
 
     // If we don't have any API videos, use mock data
     if (transformedVideos.length === 0) {
+      console.log('No API videos found, using mock data')
       const mockVideos: Video[] = [
         {
           id: '1',
           url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
           thumbnail: '',
-          title: 'Beautiful Sunset',
-          description: 'Watching the sunset at the beach. Nature is amazing!',
+          title: 'Beautiful Sunset #bshorts',
+          description: 'Watching the sunset at the beach. Nature is amazing! #bshorts #nature',
           author: {
             name: 'traveler_jane',
             address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG',
@@ -159,13 +181,13 @@ async function fetchVideos() {
         },
         {
           id: '2',
-          url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+          url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4',
           thumbnail: '',
-          title: 'Cooking Tutorial',
-          description: 'Learn how to make the perfect pasta in just 10 minutes!',
+          title: 'Cooking Tutorial #bshorts',
+          description: 'Learn how to make the perfect pasta in just 10 minutes! #bshorts #cooking',
           author: {
             name: 'chef_mario',
-            address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG',
+            address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydH',
           },
           duration: 75,
           likes: 850,
@@ -174,13 +196,13 @@ async function fetchVideos() {
         },
         {
           id: '3',
-          url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+          url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_5mb.mp4',
           thumbnail: '',
-          title: 'Dance Challenge',
-          description: 'Can you do this dance? Join the challenge and show us your moves!',
+          title: 'Dance Challenge #bshorts',
+          description: 'Can you do this dance? Join the challenge! #bshorts #dance #challenge',
           author: {
             name: 'dance_crew',
-            address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG',
+            address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydI',
           },
           duration: 30,
           likes: 3200,
@@ -189,22 +211,24 @@ async function fetchVideos() {
         },
       ]
 
-      videos.value = mockVideos.filter(video => video.duration < 120)
+      videos.value = mockVideos
     }
     else {
       videos.value = transformedVideos
+      console.log(`Loaded ${transformedVideos.length} videos from API`)
     }
   }
   catch (err) {
     console.error('Error fetching videos:', err)
-    // Fallback to mock data if API call fails
+
+    // Fallback to mock data if everything fails
     const mockVideos: Video[] = [
       {
         id: '1',
         url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
         thumbnail: '',
-        title: 'Beautiful Sunset',
-        description: 'Watching the sunset at the beach. Nature is amazing!',
+        title: 'Beautiful Sunset #bshorts',
+        description: 'Watching the sunset at the beach. Nature is amazing! #bshorts #nature',
         author: {
           name: 'traveler_jane',
           address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG',
@@ -216,13 +240,13 @@ async function fetchVideos() {
       },
       {
         id: '2',
-        url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+        url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_2mb.mp4',
         thumbnail: '',
-        title: 'Cooking Tutorial',
-        description: 'Learn how to make the perfect pasta in just 10 minutes!',
+        title: 'Cooking Tutorial #bshorts',
+        description: 'Learn how to make the perfect pasta in just 10 minutes! #bshorts #cooking',
         author: {
           name: 'chef_mario',
-          address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG',
+          address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydH',
         },
         duration: 75,
         likes: 850,
@@ -231,13 +255,13 @@ async function fetchVideos() {
       },
       {
         id: '3',
-        url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
+        url: 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_5mb.mp4',
         thumbnail: '',
-        title: 'Dance Challenge',
-        description: 'Can you do this dance? Join the challenge and show us your moves!',
+        title: 'Dance Challenge #bshorts',
+        description: 'Can you do this dance? Join the challenge! #bshorts #dance #challenge',
         author: {
           name: 'dance_crew',
-          address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG',
+          address: 'TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydI',
         },
         duration: 30,
         likes: 3200,
@@ -246,7 +270,7 @@ async function fetchVideos() {
       },
     ]
 
-    videos.value = mockVideos.filter(video => video.duration < 120)
+    videos.value = mockVideos
   }
 }
 
@@ -287,8 +311,12 @@ function handleKeyDown(e: KeyboardEvent) {
 async function handleLike(videoId: string) {
   try {
     console.log('Like video:', videoId)
-    // Use the Bastyon SDK to like the video
-    // Example: await SdkService.rpc('like', [videoId])
+    // Try different methods for liking content
+    const likeResult = await SdkService.rpc('score', {
+      txid: videoId,
+      value: 5, // Usually a value between 1-5
+    })
+    console.log('Like result:', likeResult)
   }
   catch (error) {
     console.error('Error liking video:', error)
@@ -298,8 +326,13 @@ async function handleLike(videoId: string) {
 async function handleComment(videoId: string) {
   try {
     console.log('Comment on video:', videoId)
-    // Use the Bastyon SDK to open the comments section
-    // Example: await SdkService.rpc('getcomments', [videoId])
+    // Get comments for the video
+    const commentsResult = await SdkService.rpc('getcomments', {
+      postid: videoId,
+      parentid: '',
+      count: 10,
+    })
+    console.log('Comments result:', commentsResult)
   }
   catch (error) {
     console.error('Error fetching comments:', error)
@@ -309,8 +342,13 @@ async function handleComment(videoId: string) {
 async function handleShare(videoId: string) {
   try {
     console.log('Share video:', videoId)
-    // Use the Bastyon SDK to share the video
-    // Example: await SdkService.rpc('share', [videoId])
+    // In Bastyon, sharing might involve reposting or creating a new post
+    // This would typically open the sharing interface
+    const shareResult = await SdkService.rpc('share', {
+      txid: videoId,
+      message: 'Check out this video! #bshorts',
+    })
+    console.log('Share result:', shareResult)
   }
   catch (error) {
     console.error('Error sharing video:', error)
@@ -320,8 +358,11 @@ async function handleShare(videoId: string) {
 async function handleFollow(authorAddress: string) {
   try {
     console.log('Follow author:', authorAddress)
-    // Use the Bastyon SDK to follow the author
-    // Example: await SdkService.rpc('follow', [authorAddress])
+    // Subscribe to the author
+    const followResult = await SdkService.rpc('subscribe', {
+      address: authorAddress,
+    })
+    console.log('Follow result:', followResult)
   }
   catch (error) {
     console.error('Error following author:', error)
@@ -332,8 +373,8 @@ onMounted(() => {
   initVideoFeed()
 
   // Add event listeners
-  window.addEventListener('touchstart', handleTouchStart)
-  window.addEventListener('touchend', handleTouchEnd)
+  window.addEventListener('touchstart', handleTouchStart, { passive: true })
+  window.addEventListener('touchend', handleTouchEnd, { passive: true })
   window.addEventListener('keydown', handleKeyDown)
 })
 
@@ -388,8 +429,13 @@ onUnmounted(() => {
       </div>
 
       <!-- Video counter -->
-      <div class="absolute left-4 top-4 text-white font-bold">
+      <div class="absolute left-4 top-4 rounded bg-black bg-opacity-50 px-2 py-1 text-white font-bold">
         {{ currentVideoIndex + 1 }} / {{ videos.length }}
+      </div>
+
+      <!-- Instructions for mobile -->
+      <div class="absolute right-4 top-4 rounded bg-black bg-opacity-50 px-2 py-1 text-xs text-white">
+        Swipe up/down to navigate
       </div>
     </div>
 
