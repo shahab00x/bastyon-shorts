@@ -31,13 +31,25 @@ async function initVideoFeed() {
 
   try {
     // Request necessary permissions
-    await SdkService.checkAndRequestPermissions([
+    const permissions = [
       'account',
       'messaging',
-      'payment',
       'sign',
       'mobilecamera',
-    ])
+    ]
+
+    // Only request payment permission if not in iframe environment
+    const isInIframe = window.parent !== window
+    if (!isInIframe)
+      permissions.push('payment')
+
+    try {
+      await SdkService.checkAndRequestPermissions(permissions)
+    }
+    catch (permissionError) {
+      console.warn('Some permissions could not be granted:', permissionError)
+      // Continue with initialization even if some permissions are denied
+    }
 
     // Fetch videos with hashtag #bshorts
     // This is a placeholder implementation - in a real app, you would use the Bastyon SDK

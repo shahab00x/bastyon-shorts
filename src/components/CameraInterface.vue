@@ -20,7 +20,13 @@ let recordedChunks: Blob[] = []
 async function initCamera() {
   try {
     // Request camera permission
-    await SdkService.checkAndRequestPermissions(['camera'])
+    try {
+      await SdkService.checkAndRequestPermissions(['camera'])
+    }
+    catch (permissionError) {
+      console.warn('Camera permission could not be granted:', permissionError)
+      // Continue with initialization even if permission is denied
+    }
 
     // Get user media
     videoStream.value = await navigator.mediaDevices.getUserMedia({
