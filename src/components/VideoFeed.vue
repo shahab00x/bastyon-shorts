@@ -33,9 +33,10 @@ async function initVideoFeed() {
     // Request necessary permissions
     await SdkService.checkAndRequestPermissions([
       'account',
-      'posts',
-      'camera',
-      'gallery',
+      'messaging',
+      'payment',
+      'sign',
+      'mobilecamera',
     ])
 
     // Fetch videos with hashtag #bshorts
