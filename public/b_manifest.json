@@ -8,8 +8,8 @@
   "permissions": [
     "account",
     "messaging",
-    "payment",
     "sign",
-    "mobilecamera"
+    "mobilecamera",
+    "payment"
   ]
 }
