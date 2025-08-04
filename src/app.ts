@@ -5,6 +5,9 @@ import { errorHandler, errorNotFoundHandler } from './middlewares/errorHandler'
 
 // Routes
 import { index } from './routes/index'
+import path from 'path'
+
+
 // Create Express server
 export const app = express()
 
@@ -17,3 +20,8 @@ app.use('/', index)
 
 app.use(errorNotFoundHandler)
 app.use(errorHandler)
+
+// Serve static files from public directory
+app.use(express.static('public'));
+// or with absolute path
+app.use(express.static(path.join(__dirname, 'public')));
