@@ -5,14 +5,16 @@
 </template>
 
 <script>
-import VideoPlayer from './components/VideoPlayer.vue'
+import { defineComponent } from 'vue';
+import VideoPlayer from './components/VideoPlayer.vue';
 
-export default {
+export default defineComponent({
   name: 'App',
+  inheritAttrs: false,
   components: {
     VideoPlayer
   }
-}
+});
 </script>
 
 <style>

@@ -191,6 +191,7 @@ import bastyonApi from '../services/bastyonApi'
 
 export default defineComponent({
   name: 'VideoPlayer',
+  inheritAttrs: false,
   data() {
     return {
       playlist: [],
@@ -337,136 +338,136 @@ export default defineComponent({
     },
     initializeVideoCache() {
       // Initialize the video cache with the first few videos
-      const preloadCount = Math.min(this.maxCacheSize, this.playlist.length)
+      const preloadCount = Math.min(this.maxCacheSize, this.playlist.length);
       for (let i = 0; i < preloadCount; i++) {
-        this.preloadVideo(i)
+        this.preloadVideo(i);
       }
     },
     // Clean up video cache to prevent memory leaks
     cleanupVideoCache() {
       // Remove videos that are far from the current index
-      const cleanupThreshold = this.maxCacheSize + 2
+      const cleanupThreshold = this.maxCacheSize + 2;
       
       for (const [index, videoElement] of this.videoCache.entries()) {
         if (Math.abs(index - this.currentIndex) > cleanupThreshold) {
           // Pause the video if it's playing
           if (videoElement && !videoElement.paused) {
-            videoElement.pause()
+            videoElement.pause();
           }
           // Remove from cache
-          this.videoCache.delete(index)
+          this.videoCache.delete(index);
         }
       }
     },
     preloadVideo(index) {
       // Preload a video into cache if not already cached
       if (index >= 0 && index < this.playlist.length && !this.videoCache.has(index)) {
-        const video = this.playlist[index]
-        const videoElement = document.createElement('video')
-        videoElement.src = video.url
-        videoElement.preload = 'metadata'
+        const video = this.playlist[index];
+        const videoElement = document.createElement('video');
+        videoElement.src = video.url;
+        videoElement.preload = 'metadata';
         
         // Add to cache
-        this.videoCache.set(index, videoElement)
+        this.videoCache.set(index, videoElement);
         
         // Remove oldest entry if cache is full
         if (this.videoCache.size > this.maxCacheSize) {
-          const firstKey = this.videoCache.keys().next().value
-          this.videoCache.delete(firstKey)
+          const firstKey = this.videoCache.keys().next().value;
+          this.videoCache.delete(firstKey);
         }
       }
     },
     preloadAdjacentVideos() {
       // Preload the next and previous videos
-      this.preloadVideo(this.currentIndex - 1)
-      this.preloadVideo(this.currentIndex + 1)
+      this.preloadVideo(this.currentIndex - 1);
+      this.preloadVideo(this.currentIndex + 1);
     },
     openCameraInterface() {
       // Open the camera interface
-      this.showCameraInterface = true
+      this.showCameraInterface = true;
     },
     closeCameraInterface() {
       // Close the camera interface
-      this.showCameraInterface = false
+      this.showCameraInterface = false;
     },
     recordVideo() {
       // In a real implementation, this would start recording
-      alert('Recording would start now')
+      alert('Recording would start now');
     },
     async uploadVideo() {
       // In a real implementation, this would upload the recorded video
       try {
-        const result = await bastyonApi.uploadVideo()
+        const result = await bastyonApi.uploadVideo();
         
         if (result.success) {
-          alert('Video uploaded successfully!')
-          this.closeCameraInterface()
+          alert('Video uploaded successfully!');
+          this.closeCameraInterface();
           // Refresh the playlist to include the new video
-          this.fetchVideos()
+          this.fetchVideos();
         }
       } catch (error) {
-        console.error('Error uploading video:', error)
-        alert('Video upload failed. Please try again.')
+        console.error('Error uploading video:', error);
+        alert('Video upload failed. Please try again.');
       }
     },
     toggleDescriptionDrawer() {
-      this.showDescriptionDrawer = !this.showDescriptionDrawer
+      this.showDescriptionDrawer = !this.showDescriptionDrawer;
     },
     toggleCommentsDrawer() {
-      this.showCommentsDrawer = !this.showCommentsDrawer
+      this.showCommentsDrawer = !this.showCommentsDrawer;
     },
     toggleSettingsMenu() {
-      this.showSettingsMenu = !this.showSettingsMenu
+      this.showSettingsMenu = !this.showSettingsMenu;
     },
     saveSettings() {
       // In a real implementation, this would save settings to localStorage or a backend
-      console.log('Settings saved:', this.settings)
+      console.log('Settings saved:', this.settings);
       
       // Save to localStorage
       try {
-        localStorage.setItem('bastyonShortsSettings', JSON.stringify(this.settings))
+        localStorage.setItem('bastyonShortsSettings', JSON.stringify(this.settings));
       } catch (error) {
-        console.error('Error saving settings:', error)
+        console.error('Error saving settings:', error);
       }
     },
     async rateVideo(rating, videoIndex) {
       // Only allow rating the current video
-      if (videoIndex !== this.currentIndex) return
+      if (videoIndex !== this.currentIndex) return;
       
-      const video = this.playlist[videoIndex]
+      const video = this.playlist[videoIndex];
       
       try {
         // Update rating on server
-        await bastyonApi.rateVideo(video.id, rating)
+        await bastyonApi.rateVideo(video.id, rating);
         
         // Update local state
-        video.userRating = rating
+        video.userRating = rating;
         
         // Add animation effect
-        this.animateStarRating(videoIndex)
+        this.animateStarRating(videoIndex);
       } catch (error) {
-        console.error('Error rating video:', error)
+        console.error('Error rating video:', error);
         // Update local state even if server fails
-        video.userRating = rating
+        video.userRating = rating;
         
         // Add animation effect
-        this.animateStarRating(videoIndex)
+        this.animateStarRating(videoIndex);
       }
     },
     animateStarRating(videoIndex) {
       // Add animation effect to stars
-      const videoElement = this.$refs.videoElements[videoIndex]
+      const videoElement = this.$refs.videoElements[videoIndex];
       if (videoElement) {
-        videoElement.classList.add('rating-animation')
+        videoElement.classList.add('rating-animation');
         
         // Remove animation class after animation completes
         setTimeout(() => {
-          videoElement.classList.remove('rating-animation')
-        }, 1000)
+          videoElement.classList.remove('rating-animation');
+        }, 1000);
       }
     },
     async shareVideo() {
-      if (!this.currentVideo) return
+      if (!this.currentVideo) return;
       
       try {
         // In a real implementation, this would share the video
@@ -478,26 +479,26 @@ export default defineComponent({
             title: 'Check out this Bastyon Short',
             text: this.currentVideo.description,
             url: window.location.href
-          })
+          });
         } else {
           // Fallback for browsers that don't support Web Share API
-          this.showShareOptions()
+          this.showShareOptions();
         }
       } catch (error) {
-        console.error('Error sharing video:', error)
+        console.error('Error sharing video:', error);
         // Fallback to showing share options
-        this.showShareOptions()
+        this.showShareOptions();
       }
     },
     showShareOptions() {
       // Show share options in an alert or modal
-      alert(`Share this video:\n${window.location.href}\n\nCopy this link to share the video!`)
+      alert(`Share this video:\n${window.location.href}\n\nCopy this link to share the video!`);
     },
     truncateDescription(description) {
-      if (!description) return ''
+      if (!description) return '';
       return description.length > 100 
-        ? description.substring(0, 100) + '...'
-        : description
+        ? `${description.substring(0, 100)}...`
+        : description;
     },
     async addComment() {
       if (this.newComment.trim() && this.currentVideo) {
@@ -506,21 +507,21 @@ export default defineComponent({
             this.currentVideo.id, 
             this.newComment, 
             'current_user_address' // In a real app, this would be the actual user address
-          )
+          );
           
-          this.currentVideo.comments.push(comment)
-          this.newComment = ''
+          this.currentVideo.comments.push(comment);
+          this.newComment = '';
         } catch (error) {
-          console.error('Error posting comment:', error)
+          console.error('Error posting comment:', error);
           // Fallback to local comment if API fails
           const comment = {
             id: Date.now(),
             user: 'current_user',
             text: this.newComment
-          }
+          };
           
-          this.currentVideo.comments.push(comment)
-          this.newComment = ''
+          this.currentVideo.comments.push(comment);
+          this.newComment = '';
         }
       }
     },
@@ -530,20 +531,20 @@ export default defineComponent({
           const result = await bastyonApi.donatePKoin(
             this.currentVideo.uploaderAddress, 
             10 // Default donation amount
-          )
+          );
           
           if (result.success) {
-            alert(`Successfully donated to ${this.currentVideo.uploader}!`)
+            alert(`Successfully donated to ${this.currentVideo.uploader}!`);
           }
         } catch (error) {
-          console.error('Error donating PKoin:', error)
-          alert('Donation failed. Please try again.')
+          console.error('Error donating PKoin:', error);
+          alert('Donation failed. Please try again.');
         }
       }
     },
     onVideoLoaded(index) {
       // Handle video loaded event
-      console.log(`Video ${index} loaded`)
+      console.log(`Video ${index} loaded`);
       
       // Ensure the current video plays when loaded
       if (index === this.currentIndex) {
@@ -557,37 +558,38 @@ export default defineComponent({
     },
     onVideoCanPlay(index) {
       // Handle video can play event
-      console.log(`Video ${index} can play`)
+      console.log(`Video ${index} can play`);
     },
     onVideoPlay(index) {
       // Handle video play event
       if (index === this.currentIndex) {
         this.isVideoPlaying = true;
-        console.log(`Video ${index} playing`)
+        console.log(`Video ${index} playing`);
       }
     },
     onVideoPause(index) {
       // Handle video pause event
       if (index === this.currentIndex) {
         this.isVideoPlaying = false;
-        console.log(`Video ${index} paused`)
+        console.log(`Video ${index} paused`);
       }
     },
   },
   mounted() {
-    this.fetchVideos()
+    this.fetchVideos();
   },
   beforeUnmount() {
     // Clean up video elements to prevent memory leaks
     for (const [index, videoElement] of this.videoCache.entries()) {
       if (videoElement) {
-        videoElement.pause()
-        videoElement.src = ''
-        videoElement.load()
+        videoElement.pause();
+        videoElement.src = '';
+        videoElement.load();
       }
     }
-    this.videoCache.clear()
+    this.videoCache.clear();
   }
+});
 
 </script>
 

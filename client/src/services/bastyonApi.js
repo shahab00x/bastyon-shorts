@@ -1,6 +1,8 @@
-// Bastyon API service for interacting with the server-side PocketNetProxyApi
+/**
+ * Bastyon API service for interacting with the server-side PocketNetProxyApi
+ */
 
-const API_BASE_URL = '/api'
+const API_BASE_URL = '/api';
 
 // Fetch videos with hashtag #bshorts and duration < 2 minutes
 export async function fetchBShorts() {
@@ -215,10 +217,12 @@ export async function uploadVideo(videoData) {
   }
 }
 
-export default {
+const bastyonApi = {
   fetchBShorts,
   postComment,
   donatePKoin,
   rateVideo,
   uploadVideo
-}
+};
+
+export default bastyonApi;
