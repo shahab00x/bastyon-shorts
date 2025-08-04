@@ -12,7 +12,8 @@ export default defineConfig({
         changeOrigin: true,
         secure: false
       }
-    }
+    },
+    allowedHosts: ['localhost', '127.0.0.1', '0.0.0.0', 'localhost:3030', 'apptest.bastyon.ir'] 
   },
   build: {
     outDir: '../dist',
