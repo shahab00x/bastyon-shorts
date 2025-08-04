@@ -21,6 +21,9 @@ importers:
         specifier: github:DaniilKimlb/pocketnet-proxy-api
         version: https://codeload.github.com/DaniilKimlb/pocketnet-proxy-api/tar.gz/48094f80cdb58ae588aa7b84e76d4f44a9ed9de4
     devDependencies:
+      '@types/cors':
+        specifier: ^2.8.19
+        version: 2.8.19
       '@types/express':
         specifier: ^4.17.21
         version: 4.17.23
@@ -179,6 +182,9 @@ packages:
 
   '@types/connect@3.4.38':
     resolution: {integrity: sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug==}
+
+  '@types/cors@2.8.19':
+    resolution: {integrity: sha512-mFNylyeyqN93lfe/9CSxOGREz8cpzAhH+E93xJ4xWQf62V8sQ/24reV2nyzUWM6H6Xji+GGHpkbLe7pVoUEskg==}
 
   '@types/express-serve-static-core@4.19.6':
     resolution: {integrity: sha512-N4LZ2xG7DatVqhCZzOGb1Yi5lMbXSZcmdLDe9EzSndPV2HpWYWzRbaerl2n27irrm94EPpprqa8KpskPT085+A==}
@@ -1938,6 +1944,10 @@ snapshots:
     optional: true
 
   '@types/connect@3.4.38':
+    dependencies:
+      '@types/node': 20.19.9
+
+  '@types/cors@2.8.19':
     dependencies:
       '@types/node': 20.19.9
 

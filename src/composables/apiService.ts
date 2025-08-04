@@ -1,13 +1,28 @@
 import axios from 'axios'
 
+// Use environment variable for API base URL, fallback to localhost in development
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL
+  || (import.meta.env.DEV ? 'http://localhost:3000/api' : '/api')
+
 // Create axios instance with default configuration
 const apiClient = axios.create({
-  baseURL: 'http://localhost:3000/api', // Default backend URL
+  baseURL: apiBaseUrl,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
+  // Add credentials for CORS requests
+  withCredentials: true,
 })
+
+// Add a request interceptor to handle errors
+apiClient.interceptors.response.use(
+  response => response,
+  (error) => {
+    console.error('API Error:', error.response || error.message)
+    return Promise.reject(error)
+  },
+)
 
 // API Service for interacting with our backend
 export class ApiService {

@@ -330,6 +330,7 @@ onBeforeUnmount(() => {
     <div v-else-if="videos.length > 0" class="relative h-full">
       <VideoPlayer
         :video="videos[currentVideoIndex]"
+        :is-active="true"
         @like="handleLike"
         @comment="handleComment"
         @share="handleShare"

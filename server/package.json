@@ -15,6 +15,7 @@
     "pocketnet-proxy-api": "github:DaniilKimlb/pocketnet-proxy-api"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/morgan": "^1.9.10",
     "@types/node": "^20.11.20",
