@@ -13,7 +13,12 @@ export default defineConfig({
         secure: false
       }
     },
-    allowedHosts: ['localhost', '127.0.0.1', '0.0.0.0', 'localhost:3030', 'apptest.bastyon.ir'] 
+    allowedHosts: ['localhost', '127.0.0.1', '0.0.0.0', 'localhost:3030', 'apptest.bastyon.ir'],
+    headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+        'Access-Control-Allow-Headers': '*',
+      },
   },
   build: {
     outDir: '../dist',
