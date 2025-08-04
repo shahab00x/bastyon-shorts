@@ -1,0 +1,14 @@
+{
+  "id": "bshorts.bastyon.ir",
+  "name": "BShorts",
+  "description": "Short video player for Bastyon #bshorts content",
+  "author": "PXN76kJG5sCGTwMpRfXH5oqkDzJQKNsYk4",
+  "scope": "bshorts.bastyon.ir",
+  "permissions": [
+    "account",
+    "messaging",
+    "payment",
+    "sign",
+    "mobilecamera"
+  ]
+}
