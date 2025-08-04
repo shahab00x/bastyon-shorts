@@ -9,7 +9,7 @@ import { index } from './routes/index'
 export const app = express()
 
 // Express configuration
-app.set('port', process.env.PORT || 3000)
+app.set('port', process.env.PORT || 3030)
 
 app.use(logger('dev'))
 

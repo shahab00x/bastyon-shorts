@@ -1,0 +1,14 @@
+ignoredBuiltDependencies:
+  - '@firebase/util'
+  - canvas
+  - farmhash
+  - protobufjs
+  - unrs-resolver
+
+onlyBuiltDependencies:
+  - '@firebase/util'
+  - canvas
+  - core-js
+  - farmhash
+  - protobufjs
+  - unrs-resolver
