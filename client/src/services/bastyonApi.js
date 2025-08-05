@@ -4,7 +4,7 @@
 
 const API_BASE_URL = '/api';
 
-// Fetch videos with hashtag #bshorts and duration < 2 minutes
+// Fetch all videos with duration < 2 minutes
 export async function fetchBShorts() {
   try {
     const response = await fetch(`${API_BASE_URL}/videos/bshorts`);
@@ -16,7 +16,7 @@ export async function fetchBShorts() {
     const data = await response.json();
     return data.data || [];
   } catch (error) {
-    console.error('Error fetching BShorts:', error);
+    console.error('Error fetching short videos:', error);
     throw error;
   }
 }
