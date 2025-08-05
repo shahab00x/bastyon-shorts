@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@types/cors':
+        specifier: ^2.8.19
+        version: 2.8.19
+      cors:
+        specifier: ^2.8.5
+        version: 2.8.5
       express:
         specifier: ^4.16.2
         version: 4.21.2
@@ -805,6 +811,9 @@ packages:
 
   '@types/cookiejar@2.1.5':
     resolution: {integrity: sha512-he+DHOWReW0nghN24E1WUqM0efK4kI9oTqDm6XmK8ZPe2djZ90BSNdGnIyCLzCPw7/pogPlGbzI2wHGGmi4O/Q==}
+
+  '@types/cors@2.8.19':
+    resolution: {integrity: sha512-mFNylyeyqN93lfe/9CSxOGREz8cpzAhH+E93xJ4xWQf62V8sQ/24reV2nyzUWM6H6Xji+GGHpkbLe7pVoUEskg==}
 
   '@types/debug@4.1.12':
     resolution: {integrity: sha512-vIChWdVG3LG1SMxEvI/AK+FWJthlrqlTu7fbrlywTkkaONwk/UAGaULXRlf8vkzFBLVm0zkMdCquhL5aOjhXPQ==}
@@ -1636,6 +1645,10 @@ packages:
 
   core-util-is@1.0.3:
     resolution: {integrity: sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==}
+
+  cors@2.8.5:
+    resolution: {integrity: sha512-KIHbLJqu73RGr/hnbrO9uBeixNGuvSQjul/jdFvS/KFSIH1hWVd1ng7zOHx+YrEfInLG7q4n6GHQ9cDtxv/P6g==}
+    engines: {node: '>= 0.10'}
 
   cross-spawn@6.0.6:
     resolution: {integrity: sha512-VqCUuhcd1iB+dsv8gxPttb5iZh/D0iubSP21g36KXdEuf6I5JiioesUVjpCdHV9MZRUfVFlvwtIUyPfxo5trtw==}
@@ -5573,7 +5586,7 @@ snapshots:
       '@types/istanbul-lib-coverage': 2.0.6
       collect-v8-coverage: 1.0.2
 
-  '@jest/test-sequencer@26.6.3(canvas@2.11.2)':
+  '@jest/test-sequencer@26.6.3':
     dependencies:
       '@jest/test-result': 26.6.2
       graceful-fs: 4.2.11
@@ -5581,11 +5594,7 @@ snapshots:
       jest-runner: 26.6.3(canvas@2.11.2)
       jest-runtime: 26.6.3(canvas@2.11.2)
     transitivePeerDependencies:
-      - bufferutil
-      - canvas
       - supports-color
-      - ts-node
-      - utf-8-validate
 
   '@jest/transform@26.6.2':
     dependencies:
@@ -5782,6 +5791,10 @@ snapshots:
       '@types/node': 14.18.63
 
   '@types/cookiejar@2.1.5': {}
+
+  '@types/cors@2.8.19':
+    dependencies:
+      '@types/node': 14.18.63
 
   '@types/debug@4.1.12':
     dependencies:
@@ -6722,6 +6735,11 @@ snapshots:
   core-util-is@1.0.2: {}
 
   core-util-is@1.0.3: {}
+
+  cors@2.8.5:
+    dependencies:
+      object-assign: 4.1.1
+      vary: 1.1.2
 
   cross-spawn@6.0.6:
     dependencies:
@@ -8178,7 +8196,7 @@ snapshots:
   jest-config@26.6.3(canvas@2.11.2):
     dependencies:
       '@babel/core': 7.28.0
-      '@jest/test-sequencer': 26.6.3(canvas@2.11.2)
+      '@jest/test-sequencer': 26.6.3
       '@jest/types': 26.6.2
       babel-jest: 26.6.3(@babel/core@7.28.0)
       chalk: 4.1.2

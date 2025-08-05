@@ -435,10 +435,12 @@ export default defineComponent({
       if (videoIndex !== this.currentIndex) return;
       
       const video = this.playlist[videoIndex];
+      // In a real implementation, this would come from Bastyon SDK
+      const userAddress = 'user_address_placeholder';
       
       try {
         // Update rating on server
-        await bastyonApi.rateVideo(video.id, rating);
+        await bastyonApi.rateVideo(video.id, rating, userAddress);
         
         // Update local state
         video.userRating = rating;
@@ -502,13 +504,24 @@ export default defineComponent({
     },
     async addComment() {
       if (this.newComment.trim() && this.currentVideo) {
+        // In a real implementation, this would come from Bastyon SDK
+        const userAddress = 'user_address_placeholder';
+        
         try {
-          const comment = await bastyonApi.postComment(
+          const result = await bastyonApi.postComment(
             this.currentVideo.id, 
             this.newComment, 
-            'current_user_address' // In a real app, this would be the actual user address
+            userAddress
           );
           
+          // Add the comment to the local state
+          const comment = {
+            id: Date.now(),
+            user: 'current_user',
+            userAddress: userAddress,
+            text: this.newComment,
+            timestamp: new Date().toISOString()
+          };
           this.currentVideo.comments.push(comment);
           this.newComment = '';
         } catch (error) {
@@ -517,9 +530,10 @@ export default defineComponent({
           const comment = {
             id: Date.now(),
             user: 'current_user',
-            text: this.newComment
+            userAddress: userAddress,
+            text: this.newComment,
+            timestamp: new Date().toISOString()
           };
-          
           this.currentVideo.comments.push(comment);
           this.newComment = '';
         }
@@ -527,10 +541,14 @@ export default defineComponent({
     },
     async donateToCreator() {
       if (this.currentVideo) {
+        // In a real implementation, this would come from Bastyon SDK
+        const userAddress = 'user_address_placeholder';
+        
         try {
           const result = await bastyonApi.donatePKoin(
             this.currentVideo.uploaderAddress, 
-            10 // Default donation amount
+            10, // Default donation amount
+            userAddress
           );
           
           if (result.success) {
