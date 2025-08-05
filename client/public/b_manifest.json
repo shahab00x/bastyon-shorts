@@ -6,9 +6,13 @@
   "scope": "bshorts.bastyon.ir",
   "permissions": [
     "account",
+    "notifications",
     "messaging",
     "payment",
     "sign",
+    "camera",
+    "gallery",
+    "posts",
     "mobilecamera"
   ]
 }

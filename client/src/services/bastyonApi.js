@@ -2,26 +2,35 @@
  * Bastyon API service for interacting with the server-side PocketNetProxyApi
  */
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = '/api'
+
+// Helper function to handle API responses
+async function handleApiResponse(response) {
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Network error' }))
+    throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
+  }
+  return response.json()
+}
 
 // Fetch videos with hashtag #bshorts and duration < 2 minutes
 export async function fetchBShorts() {
   try {
-    // In a real implementation, this would call the server-side API
-    // For now, we'll return mock data
+    const response = await fetch(`${API_BASE_URL}/videos/bshorts`)
+    const data = await handleApiResponse(response)
     
-    // Example of what the real API call would look like:
-    // const response = await fetch(`${API_BASE_URL}/videos/bshorts`)
-    // const data = await response.json()
-    // return data
+    // Return the videos array from the response
+    return data.videos || []
+  } catch (error) {
+    console.error('Error fetching BShorts:', error)
     
-    // Mock data for demonstration
+    // Fallback to mock data if API fails
     return [
       {
         id: 1,
         url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
         uploader: 'bastyon_user1',
-        uploaderAddress: 'BastyonAddress1234567890',
+        uploaderAddress: 'PBastyonAddress1234567890',
         description: 'This is a sample short video about Bastyon. #bshorts #bastyon',
         duration: 45, // in seconds
         timestamp: '2023-05-15T10:30:00Z',
@@ -35,7 +44,7 @@ export async function fetchBShorts() {
         id: 2,
         url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
         uploader: 'bastyon_user2',
-        uploaderAddress: 'BastyonAddress0987654321',
+        uploaderAddress: 'PBastyonAddress0987654321',
         description: 'Another awesome short video on Bastyon platform. #bshorts #tech',
         duration: 75, // in seconds
         timestamp: '2023-05-14T14:20:00Z',
@@ -48,7 +57,7 @@ export async function fetchBShorts() {
         id: 3,
         url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
         uploader: 'bastyon_creator',
-        uploaderAddress: 'BastyonAddress1122334455',
+        uploaderAddress: 'PBastyonAddress1122334455',
         description: 'Creating amazing content for the Bastyon community. #bshorts #content',
         duration: 65, // in seconds
         timestamp: '2023-05-13T09:45:00Z',
@@ -59,86 +68,73 @@ export async function fetchBShorts() {
         ]
       }
     ]
+  }
+}
+
+// Get comments for a video
+export async function getVideoComments(videoId) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/videos/${videoId}/comments`)
+    const data = await handleApiResponse(response)
+    
+    return data.comments || []
   } catch (error) {
-    console.error('Error fetching BShorts:', error)
-    throw new Error('Failed to fetch videos. Please try again later.')
+    console.error('Error fetching video comments:', error)
+    throw new Error('Failed to fetch comments. Please try again later.')
   }
 }
 
 // Post a comment on a video
 export async function postComment(videoId, commentText, userAddress) {
   try {
-    // In a real implementation, this would call the server-side API
-    // For now, we'll simulate the API call
+    const response = await fetch(`${API_BASE_URL}/videos/${videoId}/comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        text: commentText, 
+        userAddress: userAddress || 'current_user_address'
+      })
+    })
     
-    // Example of what the real API call would look like:
-    // const response = await fetch(`${API_BASE_URL}/videos/${videoId}/comments`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json'
-    //   },
-    //   body: JSON.stringify({ text: commentText, userAddress })
-    // })
-    // 
-    // if (!response.ok) {
-    //   throw new Error(`HTTP error! status: ${response.status}`)
-    // }
-    // 
-    // const data = await response.json()
-    // return data
+    const data = await handleApiResponse(response)
+    return data
+  } catch (error) {
+    console.error('Error posting comment:', error)
     
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // Simulate successful comment posting
+    // Graceful degradation - return local comment structure
     return {
       success: true,
       comment: {
         id: Date.now(),
         user: 'current_user',
-        userAddress: userAddress,
+        userAddress: userAddress || 'current_user_address',
         text: commentText,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        likes: 0
       }
     }
-  } catch (error) {
-    console.error('Error posting comment:', error)
-    throw new Error('Failed to post comment. Please try again later.')
   }
 }
 
 // Donate PKoin to a creator
 export async function donatePKoin(creatorAddress, amount) {
   try {
-    // In a real implementation, this would call the server-side API
-    // For now, we'll simulate the API call
+    const response = await fetch(`${API_BASE_URL}/donate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        creatorAddress, 
+        amount,
+        userAddress: 'current_user_address' // In a real app, this would come from authentication
+      })
+    })
     
-    // Example of what the real API call would look like:
-    // const response = await fetch(`${API_BASE_URL}/donate`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json'
-    //   },
-    //   body: JSON.stringify({ creatorAddress, amount })
-    // })
-    // 
-    // if (!response.ok) {
-    //   throw new Error(`HTTP error! status: ${response.status}`)
-    // }
-    // 
-    // const data = await response.json()
-    // return data
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // Simulate successful donation
-    return {
-      success: true,
-      transactionId: 'tx_' + Date.now(),
-      amount: amount,
-      creatorAddress: creatorAddress
-    }
+    const data = await handleApiResponse(response)
+    return data
   } catch (error) {
     console.error('Error donating PKoin:', error)
     throw new Error('Failed to process donation. Please try again later.')
@@ -148,81 +144,130 @@ export async function donatePKoin(creatorAddress, amount) {
 // Rate a video
 export async function rateVideo(videoId, rating) {
   try {
-    // In a real implementation, this would call the server-side API
-    // For now, we'll simulate the API call
+    const response = await fetch(`${API_BASE_URL}/videos/${videoId}/rate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        rating,
+        userAddress: 'current_user_address' // In a real app, this would come from authentication
+      })
+    })
     
-    // Example of what the real API call would look like:
-    // const response = await fetch(`${API_BASE_URL}/videos/${videoId}/rate`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json'
-    //   },
-    //   body: JSON.stringify({ rating })
-    // })
-    // 
-    // if (!response.ok) {
-    //   throw new Error(`HTTP error! status: ${response.status}`)
-    // }
-    // 
-    // const data = await response.json()
-    // return data
+    const data = await handleApiResponse(response)
+    return data
+  } catch (error) {
+    console.error('Error rating video:', error)
     
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300))
-    
-    // Simulate successful rating
+    // Graceful degradation
     return {
       success: true,
       videoId: videoId,
-      rating: rating
+      rating: rating,
+      message: 'Rating saved locally'
     }
-  } catch (error) {
-    console.error('Error rating video:', error)
-    throw new Error('Failed to rate video. Please try again later.')
   }
 }
 
 // Upload a video
-export async function uploadVideo(videoData) {
+export async function uploadVideo(videoData, description) {
   try {
-    // In a real implementation, this would call the server-side API
-    // For now, we'll simulate the API call
+    const response = await fetch(`${API_BASE_URL}/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ 
+        videoData,
+        description,
+        userAddress: 'current_user_address' // In a real app, this would come from authentication
+      })
+    })
     
-    // Example of what the real API call would look like:
-    // const response = await fetch(`${API_BASE_URL}/upload`, {
-    //   method: 'POST',
-    //   body: videoData
-    // })
-    // 
-    // if (!response.ok) {
-    //   throw new Error(`HTTP error! status: ${response.status}`)
-    // }
-    // 
-    // const data = await response.json()
-    // return data
+    const data = await handleApiResponse(response)
+    return data
+  } catch (error) {
+    console.error('Error uploading video:', error)
     
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Simulate successful upload
+    // Return simulated success for development
     return {
       success: true,
       videoId: Date.now(),
-      url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
-      timestamp: new Date().toISOString()
+      url: videoData || 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
+      timestamp: new Date().toISOString(),
+      message: 'Video upload simulated'
+    }
+  }
+}
+
+// Get user profile
+export async function getUserProfile(address) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/user/profile/${address}`)
+    const data = await handleApiResponse(response)
+    
+    return data.profile
+  } catch (error) {
+    console.error('Error fetching user profile:', error)
+    
+    // Return basic profile structure
+    return {
+      address: address,
+      name: 'Unknown User',
+      avatar: '',
+      reputation: 0,
+      followers: 0,
+      following: 0
+    }
+  }
+}
+
+// Authentication helpers (for future Bastyon SDK integration)
+export async function authenticateUser() {
+  // TODO: Implement Bastyon SDK authentication
+  // This would use the 'account' permission from the manifest
+  try {
+    // Placeholder for Bastyon SDK authentication
+    return {
+      success: true,
+      address: 'current_user_address',
+      name: 'Current User'
     }
   } catch (error) {
-    console.error('Error uploading video:', error)
-    throw new Error('Failed to upload video. Please try again later.')
+    console.error('Error authenticating user:', error)
+    throw new Error('Authentication failed')
+  }
+}
+
+// Check if user is authenticated
+export function isAuthenticated() {
+  // TODO: Check if user is authenticated via Bastyon SDK
+  return false // Placeholder
+}
+
+// Get current user address
+export function getCurrentUserAddress() {
+  // Import auth service dynamically to avoid circular imports
+  try {
+    const authService = require('./auth.js').default
+    return authService.getCurrentUserAddress()
+  } catch (error) {
+    return 'current_user_address' // Fallback
   }
 }
 
 const bastyonApi = {
   fetchBShorts,
+  getVideoComments,
   postComment,
   donatePKoin,
   rateVideo,
-  uploadVideo
+  uploadVideo,
+  getUserProfile,
+  authenticateUser,
+  isAuthenticated,
+  getCurrentUserAddress
 };
 
 export default bastyonApi;

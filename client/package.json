@@ -10,7 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.3.0"
+    "vue": "^3.3.0",
+    "axios": "^1.6.0",
+    "hammerjs": "^2.0.8",
+    "video.js": "^8.6.0",
+    "videojs-contrib-hls": "^5.15.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.0.0",

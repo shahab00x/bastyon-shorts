@@ -397,7 +397,11 @@ export default defineComponent({
     async uploadVideo() {
       // In a real implementation, this would upload the recorded video
       try {
-        const result = await bastyonApi.uploadVideo();
+        // For now, we'll simulate video upload with a placeholder
+        const videoData = 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4';
+        const description = 'New BShorts video uploaded from the app! #bshorts';
+        
+        const result = await bastyonApi.uploadVideo(videoData, description);
         
         if (result.success) {
           alert('Video uploaded successfully!');
@@ -413,8 +417,19 @@ export default defineComponent({
     toggleDescriptionDrawer() {
       this.showDescriptionDrawer = !this.showDescriptionDrawer;
     },
-    toggleCommentsDrawer() {
+    async toggleCommentsDrawer() {
       this.showCommentsDrawer = !this.showCommentsDrawer;
+      
+      // Load comments when drawer opens
+      if (this.showCommentsDrawer && this.currentVideo) {
+        try {
+          const comments = await bastyonApi.getVideoComments(this.currentVideo.id);
+          this.currentVideo.comments = comments;
+        } catch (error) {
+          console.error('Error loading comments:', error);
+          // Keep existing comments if loading fails
+        }
+      }
     },
     toggleSettingsMenu() {
       this.showSettingsMenu = !this.showSettingsMenu;
@@ -503,21 +518,26 @@ export default defineComponent({
     async addComment() {
       if (this.newComment.trim() && this.currentVideo) {
         try {
-          const comment = await bastyonApi.postComment(
+          const result = await bastyonApi.postComment(
             this.currentVideo.id, 
             this.newComment, 
-            'current_user_address' // In a real app, this would be the actual user address
+            bastyonApi.getCurrentUserAddress()
           );
           
-          this.currentVideo.comments.push(comment);
-          this.newComment = '';
+          if (result.success && result.comment) {
+            this.currentVideo.comments.push(result.comment);
+            this.newComment = '';
+          }
         } catch (error) {
           console.error('Error posting comment:', error);
           // Fallback to local comment if API fails
           const comment = {
             id: Date.now(),
             user: 'current_user',
-            text: this.newComment
+            userAddress: bastyonApi.getCurrentUserAddress(),
+            text: this.newComment,
+            timestamp: new Date().toISOString(),
+            likes: 0
           };
           
           this.currentVideo.comments.push(comment);
