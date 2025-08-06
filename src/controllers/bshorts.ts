@@ -179,7 +179,7 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         try {
           // Only attempt to decode if the URL appears to be encoded
           if (videoUrl && (videoUrl.includes('%3A') || videoUrl.includes('%2F'))) {
-            videoUrl = decodeURIComponent(videoUrl);
+            videoUrl = safeDecodeURIComponent(videoUrl);
           }
         } catch (e) {
           // If decoding fails, continue with original URL
@@ -231,8 +231,22 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
               console.log('Failed to decode comment message');
             }
             
-            // Then try to parse as JSON
-            const commentMsg = decodedMsg ? JSON.parse(decodedMsg) : {};
+            // Then try to parse as JSON, but first clean the string of bad control characters
+            let cleanedMsg = decodedMsg;
+            if (cleanedMsg) {
+              // Remove bad control characters that would cause JSON.parse to fail
+              cleanedMsg = cleanedMsg.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
+            }
+            
+            // Try to parse as JSON
+            let commentMsg: { message?: string } = {};
+            try {
+              commentMsg = cleanedMsg ? JSON.parse(cleanedMsg) : {};
+            } catch (parseError) {
+              // If JSON parsing fails, use the cleaned message as plain text
+              commentMsg = { message: cleanedMsg || '' };
+            }
+            
             comments.push({
               id: post.lastComment.id,
               user: post.lastComment.address?.substring(0, 8) || 'Anonymous',
