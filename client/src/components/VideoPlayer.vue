@@ -45,6 +45,7 @@
           <div class="bottom-section">
             <div class="account-info">
               <span class="account-name">{{ video.uploader }}</span>
+              <span class="video-date">{{ video.formattedDate }}</span>
               <button class="follow-btn">Follow</button>
             </div>
             <div 
@@ -80,6 +81,10 @@
             <div class="share-btn" @click="shareVideo">
               ↗
             </div>
+            
+            <div class="download-btn" @click="showDownloadOptions">
+              ↓
+            </div>
           </div>
         </div>
       </div>
@@ -89,6 +94,9 @@
     <div 
       class="description-drawer" 
       :class="{ 'open': showDescriptionDrawer }"
+      @touchstart="handleDrawerTouchStart"
+      @touchmove="handleDrawerTouchMove"
+      @touchend="handleDrawerTouchEnd"
     >
       <div class="drawer-content">
         <h3>Video Description</h3>
@@ -101,16 +109,20 @@
     <div 
       class="comments-drawer" 
       :class="{ 'open': showCommentsDrawer }"
+      @touchstart="handleDrawerTouchStart"
+      @touchmove="handleDrawerTouchMove"
+      @touchend="handleDrawerTouchEnd"
     >
       <div class="drawer-content">
         <h3>Comments</h3>
         <div class="comments-list">
           <div 
-            v-for="comment in currentVideo?.comments" 
+            v-for="comment in currentVideo?.commentData" 
             :key="comment.id" 
             class="comment"
           >
             <p><strong>{{ comment.user }}:</strong> {{ comment.text }}</p>
+            <span class="comment-date">{{ comment.timestamp }}</span>
           </div>
         </div>
         <div class="add-comment">
@@ -181,6 +193,29 @@
           <button @click="uploadVideo" class="upload-btn">Upload</button>
         </div>
       </div>
+    <!-- Download Options Modal -->
+    <div 
+      v-if="showDownloadModal" 
+      class="download-modal"
+      @click="closeDownloadModal"
+    >
+      <div class="download-modal-content" @click.stop>
+        <h3>Download Video</h3>
+        <p>Select a resolution:</p>
+        <div class="resolution-options">
+          <button 
+            v-for="resolution in availableResolutions" 
+            :key="resolution.resolution.id"
+            @click="downloadVideo(resolution.fileDownloadUrl, resolution.resolution.label)"
+            class="resolution-btn"
+          >
+            {{ resolution.resolution.label }} ({{ formatFileSize(resolution.size) }})
+          </button>
+        </div>
+        <button @click="closeDownloadModal" class="close-btn">Close</button>
+      </div>
+    </div>
+    
     </div>
   </div>
 </template>
@@ -203,6 +238,7 @@ export default defineComponent({
       touchStartY: 0,
       touchStartX: 0,
       touchStartTime: 0,
+      drawerTouchStartY: 0, // For drawer swipe handling
       isVideoPlaying: false,
       showCameraInterface: false,
       videoCache: new Map(), // Cache for loaded videos
@@ -213,7 +249,9 @@ export default defineComponent({
         notifications: true
       },
       loading: false,
-      error: null
+      error: null,
+      showDownloadModal: false,
+      availableResolutions: []
     };
   },
   computed: {
@@ -336,6 +374,25 @@ export default defineComponent({
       this.touchStartX = 0;
       this.touchStartTime = 0;
     },
+    handleDrawerTouchStart(event) {
+      this.drawerTouchStartY = event.touches[0].clientY;
+    },
+    handleDrawerTouchMove(event) {
+      if (!this.drawerTouchStartY) return;
+      
+      const currentY = event.touches[0].clientY;
+      const deltaY = currentY - this.drawerTouchStartY;
+      
+      // Only close when swiping down
+      if (deltaY > 50) { // Minimum swipe distance
+        this.showCommentsDrawer = false;
+        this.showDescriptionDrawer = false;
+        this.drawerTouchStartY = 0;
+      }
+    },
+    handleDrawerTouchEnd() {
+      this.drawerTouchStartY = 0;
+    },
     initializeVideoCache() {
       // Initialize the video cache with the first few videos
       const preloadCount = Math.min(this.maxCacheSize, this.playlist.length);
@@ -418,6 +475,43 @@ export default defineComponent({
     },
     toggleSettingsMenu() {
       this.showSettingsMenu = !this.showSettingsMenu;
+    },
+    showDownloadOptions() {
+      // Show download options modal with available resolutions
+      if (this.currentVideo && this.currentVideo.resolutions) {
+        this.availableResolutions = this.currentVideo.resolutions;
+        this.showDownloadModal = true;
+      } else {
+        alert('No download options available for this video.');
+      }
+    },
+    closeDownloadModal() {
+      // Close the download options modal
+      this.showDownloadModal = false;
+      this.availableResolutions = [];
+    },
+    downloadVideo(url, resolution) {
+      // Download the video with the selected resolution
+      if (url) {
+        // Create a temporary link and trigger download
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `bastyon-short-${this.currentVideo.id}-${resolution}.mp4`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Close the modal after download starts
+        this.closeDownloadModal();
+      }
+    },
+    formatFileSize(bytes) {
+      // Format file size for display
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     },
     saveSettings() {
       // In a real implementation, this would save settings to localStorage or a backend
@@ -666,37 +760,33 @@ export default defineComponent({
 .account-info {
   display: flex;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .account-name {
-  color: var(--text-primary);
   font-weight: bold;
-  font-size: 18px;
+  margin-right: 10px;
+  color: white;
+}
+
+.video-date {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
   margin-right: 10px;
 }
 
 .follow-btn {
-  background-color: var(--accent-color);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.2);
   border: none;
-  border-radius: 4px;
-  padding: 5px 15px;
-  font-weight: bold;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
 }
 
 .follow-btn:hover {
-  background-color: var(--accent-hover);
-}
-
-.video-description {
-  background-color: rgba(0, 0, 0, 0.5);
-  color: var(--text-primary);
-  padding: 10px;
-  border-radius: 8px;
-  cursor: pointer;
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .right-panel {
@@ -721,6 +811,7 @@ export default defineComponent({
   font-size: 24px;
   color: var(--star-empty);
   transition: color 0.2s ease;
+  margin: 0 2px;
 }
 
 .star.filled {
@@ -828,12 +919,19 @@ export default defineComponent({
 }
 
 .comment {
-  padding: 10px 0;
-  border-bottom: 1px solid #333;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .comment:last-child {
   border-bottom: none;
+}
+
+.comment-date {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 4px;
+  display: block;
 }
 
 /* Star Rating Styles */
@@ -1066,4 +1164,82 @@ export default defineComponent({
 .close-btn:hover {
   background-color: #668cff;
 }
+
+/* Download Modal Styles */
+.download-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.download-modal-content {
+  background-color: var(--background-darker);
+  border-radius: 10px;
+  padding: 20px;
+  width: 90%;
+  max-width: 400px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.download-modal-content h3 {
+  margin-top: 0;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.download-modal-content p {
+  color: var(--text-secondary);
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.resolution-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.resolution-btn {
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 12px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.resolution-btn:hover {
+  background-color: var(--accent-hover);
+}
+
+.download-btn {
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.download-btn:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
 </style>
