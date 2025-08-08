@@ -63,299 +63,66 @@ interface SearchParams {
  */
 export async function getBShorts(req: Request, res: Response): Promise<void> {
   try {
-    const pocketNetProxyInstance = await getPocketNetProxyInstance()
+    const lang = typeof req.query.lang === 'string' ? req.query.lang : 'en'
+    const limit = Number.parseInt(String(req.query.limit ?? '20'), 10) || 20
+    const offset = Number.parseInt(String(req.query.offset ?? '0'), 10) || 0
+    const base = process.env.PLAYLISTS_API_BASE || 'http://localhost:4040'
+    const url = `${base}/playlists/${encodeURIComponent(lang)}?limit=${limit}&offset=${offset}`
 
-    // Try multiple keywords to get a broader range of content
-    const keywords = ['video', 'media', 'short', 'clip', 'news', '#video', '#truth']
+    console.log(`Fetching playlists from ${url}`)
+    const response = await axios.get(url, { timeout: 10000 })
+    const payload = response.data || {}
 
-    let allPosts: any[] = []
-    let posts: any[] = []
+    const items: any[] = Array.isArray(payload.items) ? payload.items : []
+    console.log(`Received ${items.length} playlist items`)
 
-    console.log('Starting search for BShorts...')
+    const videos = items.map((item: any) => {
+      const duration = Number(item?.peertube?.durationSeconds ?? 0) || 0
+      const formattedDate = item?.timestamp
+        ? new Date(item.timestamp * 1000).toLocaleDateString()
+        : 'Unknown date'
 
-    // Search for posts using multiple keywords
-    for (const keyword of keywords) {
+      // Parse hashtags field which comes as a JSON-encoded string
+      let tags: string[] = []
       try {
-        console.log(`Searching for keyword: ${keyword}`)
-        const searchResult = await pocketNetProxyInstance.rpc.search({
-          keyword,
-          type: 'videos', // Available types: posts, videos, videolink, tags, users
-          pageStart: 0,
-          pageSize: 5, // Increased page size to get more results
-        } satisfies SearchParams)
-
-        console.log(`Search result structure for keyword '${keyword}':`, Object.keys(searchResult || {}))
-        
-        if (searchResult && searchResult.data) {
-          console.log(`Search result data structure:`, Object.keys(searchResult.data))
-          
-          // Log the full structure for debugging
-          if (searchResult.data.posts) {
-            console.log(`Posts structure:`, Object.keys(searchResult.data.posts))
-            if (searchResult.data.posts.data) {
-              console.log(`Found ${searchResult.data.posts.data.length} posts for keyword '${keyword}'`)
-              console.log(`Sample post structure:`, searchResult.data.posts.data.length > 0 ? Object.keys(searchResult.data.posts.data[0]) : 'No posts')
-              posts = searchResult.data.posts.data
-            }
-          }
-        } else {
-          console.log(`No search result for keyword '${keyword}'`)
+        if (typeof item?.hashtags === 'string' && item.hashtags.trim().startsWith('[')) {
+          tags = JSON.parse(item.hashtags)
         }
-        
-        allPosts = allPosts.concat(posts)
+      } catch (e) {
+        console.warn('Failed to parse hashtags JSON:', e)
+        tags = []
       }
-      catch (error) {
-        console.error(`Error searching for keyword '${keyword}':`, error)
-        // Continue with next keyword if one fails
-      }
-    }
-    
-    console.log(`Total posts collected: ${allPosts.length}`)
-    
-    // If we still don't have posts, let's try getting all videos without filtering
-    if (allPosts.length === 0) {
-      try {
-        console.log('Trying to get all videos without keyword filtering...')
-        const searchResult = await pocketNetProxyInstance.rpc.search({
-          keyword: '#truth',
-          type: 'videos',
-          pageStart: 0,
-          pageSize: 10,
-        } satisfies SearchParams)
-        
-        if (searchResult && searchResult.data && searchResult.data.posts && searchResult.data.posts.data) {
-          allPosts = searchResult.data.posts.data
-          console.log(`Found ${allPosts.length} posts without keyword filtering`)
-        }
-      } catch (error) {
-        console.error('Error getting all videos:', error)
-      }
-    }
-    
-    posts = allPosts
 
-    // Deduplicate posts by txid or hash
-    const seenIds = new Set()
-    const uniquePosts = posts.filter((post) => {
-      const id = post.txid || post.hash || post.id
-      if (!id) return true; // Keep posts without IDs for now
-      if (seenIds.has(id)) {
-        return false
+      return {
+        id: item.video_hash,
+        hash: item.video_hash,
+        txid: item.video_hash,
+        url: item.video_url, // keep peertube:// URL; client converts to direct MP4
+        resolutions: [] as any[],
+        uploader: item?.author?.address || item.author_address || 'Unknown',
+        uploaderAddress: item.author_address,
+        description: item.caption || item.description || '',
+        duration,
+        timestamp: item?.timestamp ? new Date(item.timestamp * 1000).toISOString() : new Date().toISOString(),
+        formattedDate,
+        likes: item?.ratings?.score || item?.ratings?.ratingUp || 0,
+        comments: item?.ratings?.ratingsCount || 0,
+        commentData: [] as any[],
+        type: 'video',
+        tags,
+        language: item.language,
+        hasVideo: !!item.video_url,
+        videoInfo: { peertube: item.peertube },
+        rawPost: item,
+        // Optional extra fields
+        bastyonPostLink: item.bastyon_post_link,
       }
-      seenIds.add(id)
-      return true
     })
-    
-    console.log(`Posts after deduplication: ${uniquePosts.length}`)
 
-    // Let's first see what we have before filtering
-    console.log(`Sample post before filtering:`, uniquePosts.length > 0 ? uniquePosts[0] : 'No posts')
-    
-    // Filter for short videos (under 5 minutes) and format data
-    // Using a more lenient filter for debugging
-    const shortVideos = uniquePosts
-      .filter((post: any) => {
-        // Log the duration for debugging
-        console.log(`Post duration: ${post.duration}, type: ${typeof post.duration}`)
-        console.log(`Full post structure for duration debugging:`, JSON.stringify({
-          duration: post.duration,
-          s: post.s,
-          videoInfo: post.videoInfo,
-          rawPost: post.rawPost ? { s: post.rawPost.s } : 'no rawPost'
-        }, null, 2))
-        
-        // Accept posts with duration < 300 seconds (5 minutes) for debugging
-        // Also accept posts without duration for now
-        return !post.duration || post.duration < 300
-      })
-      .slice(0, 20) // Limit to 20 videos for debugging
-      .map(async (post: any) => {
-        // Extract video URL from various possible fields
-        let videoUrl = post.u || post.s?.u || post.url || ''
-        let videoResolutions = []
-
-        // Handle PeerTube URLs by converting to direct URLs
-        // First decode the URL if it's encoded
-        try {
-          // Only attempt to decode if the URL appears to be encoded
-          if (videoUrl && (videoUrl.includes('%3A') || videoUrl.includes('%2F'))) {
-            videoUrl = safeDecodeURIComponent(videoUrl);
-          }
-        } catch (e) {
-          // If decoding fails, continue with original URL
-          console.log('Failed to decode URL:', videoUrl);
-        }
-        
-        videoUrl = convertPeerTubeUrlToDirect(videoUrl)
-
-        // If it's still a PeerTube URL, try fetching details from PeerTube API as fallback
-        if (videoUrl.startsWith('peertube://')) {
-          // Extract host and UUID from peertube://host/uuid format
-          const urlParts = videoUrl.substring(11).split('/') // Remove 'peertube://' prefix
-          if (urlParts.length >= 2) {
-            const host = urlParts[0]
-            const videoId = urlParts[1]
-
-            // Fetch video details from PeerTube API
-            const videoDetails = await fetchPeerTubeVideoDetails(host, videoId)
-            if (videoDetails) {
-              // Use the first available file URL
-              if (videoDetails.files && videoDetails.files.length > 0) {
-                videoUrl = videoDetails.files[0].fileUrl
-              }
-              // Add streaming playlist files for download options
-              if (videoDetails.streamingPlaylists && videoDetails.streamingPlaylists.length > 0 && videoDetails.streamingPlaylists[0].files) {
-                // Include resolution information for download options
-                videoResolutions = videoDetails.streamingPlaylists[0].files
-              } else if (videoDetails.files) {
-                // Fallback to direct files if streaming playlists not available
-                videoResolutions = videoDetails.files
-              }
-            }
-          }
-        }
-
-        // Format the date for display
-        const formattedDate = post.time ? new Date(post.time * 1000).toLocaleDateString() : 'Unknown date'
-
-        // Extract comments if available
-        const comments = []
-        if (post.lastComment) {
-          try {
-            // First try to decode the message
-            let decodedMsg = post.lastComment.msg;
-            try {
-              decodedMsg = safeDecodeURIComponent(post.lastComment.msg);
-            } catch (decodeError) {
-              // If decoding fails, continue with original message
-              console.log('Failed to decode comment message');
-            }
-            
-            // Then try to parse as JSON, but first clean the string of bad control characters
-            let cleanedMsg = decodedMsg;
-            if (cleanedMsg) {
-              // Remove bad control characters that would cause JSON.parse to fail
-              cleanedMsg = cleanedMsg.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
-            }
-            
-            // Try to parse as JSON
-            let commentMsg: { message?: string } = {};
-            try {
-              commentMsg = cleanedMsg ? JSON.parse(cleanedMsg) : {};
-            } catch (parseError) {
-              // If JSON parsing fails, use the cleaned message as plain text
-              commentMsg = { message: cleanedMsg || '' };
-            }
-            
-            comments.push({
-              id: post.lastComment.id,
-              user: post.lastComment.address?.substring(0, 8) || 'Anonymous',
-              text: commentMsg.message ? safeDecodeURIComponent(commentMsg.message) : '',
-              timestamp: post.lastComment.time ? new Date(post.lastComment.time * 1000).toLocaleDateString() : 'Unknown date',
-            })
-          }
-          catch (e) {
-            console.error('Error parsing comment:', e)
-            // Add a basic comment entry even if parsing fails
-            comments.push({
-              id: post.lastComment.id,
-              user: post.lastComment.address?.substring(0, 8) || 'Anonymous',
-              text: 'Unable to parse comment',
-              timestamp: post.lastComment.time ? new Date(post.lastComment.time * 1000).toLocaleDateString() : 'Unknown date',
-            })
-          }
-        }
-
-        // Try to extract duration from various possible sources
-        let duration = post.duration || 0;
-        
-        // Check if duration is in the video metadata
-        if (!duration && post.s && typeof post.s === 'object') {
-          // Check common duration fields in video metadata
-          if (post.s.duration) {
-            duration = post.s.duration;
-          } else if (post.s.v && typeof post.s.v === 'object' && post.s.v.duration) {
-            duration = post.s.v.duration;
-          } else if (post.s.videos && Array.isArray(post.s.videos) && post.s.videos.length > 0) {
-            // If videos is an array, check first video for duration
-            const firstVideo = post.s.videos[0];
-            if (firstVideo && firstVideo.duration) {
-              duration = firstVideo.duration;
-            } else if (firstVideo && firstVideo.d) {
-              // Sometimes duration is stored as 'd' field
-              duration = firstVideo.d;
-            } else if (firstVideo && firstVideo.l) {
-              // Sometimes duration is stored as 'l' field (length)
-              duration = firstVideo.l;
-            }
-          }
-        }
-        
-        // If we still don't have duration, check rawPost
-        if (!duration && post.rawPost && post.rawPost.s && typeof post.rawPost.s === 'object') {
-          if (post.rawPost.s.duration) {
-            duration = post.rawPost.s.duration;
-          } else if (post.rawPost.s.v && typeof post.rawPost.s.v === 'object' && post.rawPost.s.v.duration) {
-            duration = post.rawPost.s.v.duration;
-          } else if (post.rawPost.s.videos && Array.isArray(post.rawPost.s.videos) && post.rawPost.s.videos.length > 0) {
-            // Check rawPost videos array
-            const firstVideo = post.rawPost.s.videos[0];
-            if (firstVideo && firstVideo.duration) {
-              duration = firstVideo.duration;
-            } else if (firstVideo && firstVideo.d) {
-              duration = firstVideo.d;
-            } else if (firstVideo && firstVideo.l) {
-              duration = firstVideo.l;
-            }
-          }
-        }
-        
-        // Convert duration to number if it's a string
-        if (typeof duration === 'string') {
-          duration = Number.parseFloat(duration);
-        }
-        
-        // If duration is NaN, set it to 0
-        if (Number.isNaN(duration)) {
-          duration = 0;
-        }
-
-        return {
-          id: post.txid || post.hash || post.id,
-          hash: post.hash,
-          txid: post.txid,
-          url: videoUrl, // 'u' field contains URL, converted if it's a PeerTube URL
-          resolutions: videoResolutions, // Available resolutions for download
-          uploader: post.userprofile?.name || post.userprofile?.nick || post.address || 'Unknown',
-          uploaderAddress: post.address,
-          description: post.m ? safeDecodeURIComponent(post.m) : (post.description || ''), // 'm' field contains message
-          duration: duration,
-          timestamp: post.time ? new Date(post.time * 1000).toISOString() : new Date().toISOString(), // Convert Unix timestamp
-          formattedDate, // Human-readable date
-          likes: post.scoreSum || post.likes || post.rating || 0,
-          comments: post.comments || 0,
-          commentData: comments, // Actual comment data
-          type: post.type || 'video',
-          tags: post.t ? post.t.map((tag: string) => safeDecodeURIComponent(tag)) : (post.tags || []),
-          language: post.l || post.language,
-          // Video-related fields if available
-          hasVideo: !!(post.s?.videos || post.s?.v || post.u || post.url),
-          videoInfo: post.s,
-          // Include raw post data for debugging
-          rawPost: post,
-        }
-      })
-
-    // Resolve all promises for async operations
-    const resolvedVideos = await Promise.all(shortVideos)
-
-    console.log(`Sending ${resolvedVideos.length} videos`)
-    
-    // Send the formatted short videos
-    res.json(resolvedVideos)
-  }
-  catch (error) {
-    console.error('Error fetching short videos:', error)
+    // Respond with the mapped videos
+    res.json(videos)
+  } catch (error) {
+    console.error('Error fetching short videos from playlists API:', error)
     res.status(500).json({
       message: 'Failed to retrieve short videos',
       error: error instanceof Error ? error.message : 'Unknown error',

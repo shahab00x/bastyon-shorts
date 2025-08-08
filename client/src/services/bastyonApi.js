@@ -14,7 +14,8 @@ export async function fetchBShorts() {
     }
     
     const data = await response.json();
-    return data.data || [];
+    // Server returns an array of videos directly
+    return Array.isArray(data) ? data : (data.data || []);
   } catch (error) {
     console.error('Error fetching short videos:', error);
     throw error;

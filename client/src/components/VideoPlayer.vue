@@ -27,7 +27,7 @@
       >
         <video 
           ref="videoElements"
-          :src="video.url" 
+          :src="getVideoSource(video.url)" 
           autoplay 
           muted 
           playsinline
@@ -222,6 +222,7 @@
 
 <script>
 import { defineComponent } from 'vue'
+import Hls from 'hls.js'
 import bastyonApi from '../services/bastyonApi'
 
 export default defineComponent({
@@ -252,6 +253,9 @@ export default defineComponent({
       error: null,
       showDownloadModal: false,
       availableResolutions: []
+      ,
+      // Keep track of HLS instances per slide index
+      hlsPlayers: new Map()
     };
   },
   computed: {
@@ -260,6 +264,78 @@ export default defineComponent({
     }
   },
   methods: {
+    // Convert peertube://host/uuid to direct fragmented MP4 for reliable playback
+    getVideoSource(url) {
+      try {
+        if (!url) return '';
+        // Decode if encoded
+        const decoded = decodeURIComponent(url);
+        if (decoded.startsWith('peertube://')) {
+          const parts = decoded.substring(11).split('/');
+          if (parts.length >= 2) {
+            const hostName = parts[0];
+            const videoId = parts[1];
+            return `https://${hostName}/download/streaming-playlists/hls/videos/${videoId}-360-fragmented.mp4`;
+          }
+        }
+        return decoded;
+      } catch (e) {
+        // Fallback to original URL on any error
+        return url;
+      }
+    },
+    // Setup HLS for a particular video index if supported and hlsUrl is present
+    setupHlsForIndex(index) {
+      try {
+        const video = this.playlist[index];
+        if (!video) return;
+        const hlsUrl = video?.videoInfo?.peertube?.hlsUrl;
+        // If no hlsUrl, skip and rely on direct MP4 source
+        if (!hlsUrl) return;
+
+        // If browser supports native HLS (Safari), just set the src directly
+        const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+        if (!videoEl) return;
+
+        // If an instance already exists for this index, do nothing
+        if (this.hlsPlayers.has(index)) return;
+
+        if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+          videoEl.src = hlsUrl;
+          return;
+        }
+
+        if (Hls.isSupported()) {
+          const hls = new Hls({
+            lowLatencyMode: true,
+            backBufferLength: 60,
+          });
+          hls.loadSource(hlsUrl);
+          hls.attachMedia(videoEl);
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            console.error('HLS error', data);
+          });
+          this.hlsPlayers.set(index, hls);
+        }
+      } catch (e) {
+        console.error('Failed to setup HLS:', e);
+      }
+    },
+    // Destroy HLS instance for an index
+    destroyHlsForIndex(index) {
+      const inst = this.hlsPlayers.get(index);
+      if (inst) {
+        try { inst.destroy(); } catch (_) {}
+        this.hlsPlayers.delete(index);
+      }
+    },
+    // Destroy all HLS instances
+    destroyAllHls() {
+      for (const [idx, inst] of this.hlsPlayers.entries()) {
+        try { inst.destroy(); } catch (_) {}
+        this.hlsPlayers.delete(idx);
+      }
+    },
     async fetchVideos() {
       // Set loading state
       this.loading = true;
@@ -315,16 +391,22 @@ export default defineComponent({
     },
     nextVideo() {
       if (this.currentIndex < this.playlist.length - 1) {
+        this.destroyHlsForIndex(this.currentIndex);
         this.currentIndex++;
         this.preloadAdjacentVideos();
         this.cleanupVideoCache();
+        // Setup HLS for new index if available
+        this.$nextTick(() => this.setupHlsForIndex(this.currentIndex));
       }
     },
     prevVideo() {
       if (this.currentIndex > 0) {
+        this.destroyHlsForIndex(this.currentIndex);
         this.currentIndex--;
         this.preloadAdjacentVideos();
         this.cleanupVideoCache();
+        // Setup HLS for new index if available
+        this.$nextTick(() => this.setupHlsForIndex(this.currentIndex));
       }
     },
     handleTouchStart(event) {
@@ -655,7 +737,9 @@ export default defineComponent({
       }
     },
     onVideoLoaded(index) {
-      // Handle video loaded event
+      // Initialize HLS for this slide if provided by API
+      this.setupHlsForIndex(index);
+      // existing logic continues...
       console.log(`Video ${index} loaded`);
       
       // Ensure the current video plays when loaded
@@ -689,8 +773,12 @@ export default defineComponent({
   },
   mounted() {
     this.fetchVideos();
+    // Ensure first video initializes HLS if available
+    this.$nextTick(() => this.setupHlsForIndex(this.currentIndex));
   },
   beforeUnmount() {
+    // Cleanup any HLS instances
+    this.destroyAllHls();
     // Clean up video elements to prevent memory leaks
     for (const [index, videoElement] of this.videoCache.entries()) {
       if (videoElement) {
