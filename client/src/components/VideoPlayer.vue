@@ -34,12 +34,23 @@
           webkit-playsinline
           x5-playsinline
           preload="metadata"
+          @click="togglePlayPause(index)"
           @loadeddata="onVideoLoaded(index)"
           @ended="nextVideo"
           @canplay="onVideoCanPlay(index)"
           @play="onVideoPlay(index)"
           @pause="onVideoPause(index)"
         ></video>
+
+        <!-- Buffering spinner -->
+        <div v-if="bufferingIndex === index" class="buffering-overlay">
+          <div class="spinner"></div>
+        </div>
+
+        <!-- Pause overlay -->
+        <div v-if="pausedOverlayIndex === index" class="pause-overlay" @click.stop="togglePlayPause(index)">
+          ▶
+        </div>
 
         <!-- Unmute hint/control -->
         <button 
@@ -52,7 +63,12 @@
         <div class="video-info">
           <div class="bottom-section">
             <div class="account-info">
-              <span class="account-name">{{ video.uploader }}</span>
+              <div class="uploader">
+                <img v-if="video.uploaderAvatar" :src="video.uploaderAvatar" alt="avatar" class="uploader-avatar" />
+                <div v-else class="uploader-avatar-fallback">{{ (video.uploader || '?').charAt(0).toUpperCase() }}</div>
+                <span class="uploader-name">@{{ video.uploader }}</span>
+                <span v-if="video.uploaderReputation != null" class="uploader-rep">• Rep {{ video.uploaderReputation }}</span>
+              </div>
               <span class="video-date">{{ video.formattedDate }}</span>
               <button class="follow-btn">Follow</button>
             </div>
@@ -74,13 +90,13 @@
                   v-for="i in 5" 
                   :key="i" 
                   class="star"
-                  :class="{ 'filled': i <= (video.userRating || 1), 'interactive': currentIndex === index }"
+                  :class="{ 'filled': i <= Math.round(video.averageRating || video.userRating || 1), 'interactive': currentIndex === index }"
                   @click="rateVideo(i, index)"
                 >
                   ★
                 </span>
               </div>
-              <div class="likes-count">{{ video.likes || 0 }} likes</div>
+              <div class="likes-count">Avg: {{ (video.averageRating || video.userRating || 1).toFixed(1) }}/5 • {{ video.ratingsCount || 0 }} ratings</div>
             </div>
             
             <div class="comments-icon" @click="toggleCommentsDrawer">
@@ -89,7 +105,7 @@
             </div>
             
             <div class="share-btn" @click="shareVideo">
-              ↗
+              🔗
             </div>
             
             <div class="download-btn" @click="showDownloadOptions">
@@ -269,7 +285,10 @@ export default defineComponent({
       ,
       // audio state
       isMuted: true,
-      userWantsSound: false
+      userWantsSound: false,
+      // UI state
+      bufferingIndex: null,
+      pausedOverlayIndex: null
     };
   },
   computed: {
@@ -300,39 +319,77 @@ export default defineComponent({
     },
     // Setup HLS for a particular video index if supported and hlsUrl is present
     setupHlsForIndex(index) {
-      try {
-        const video = this.playlist[index];
-        if (!video) return;
-        const hlsUrl = video?.videoInfo?.peertube?.hlsUrl;
-        // If no hlsUrl, skip and rely on direct MP4 source
-        if (!hlsUrl) return;
+      const video = this.playlist[index];
+      if (!video) return;
+      const hlsUrl = video?.videoInfo?.peertube?.hlsUrl;
+      if (!hlsUrl) return;
 
-        // If browser supports native HLS (Safari), just set the src directly
-        const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
-        if (!videoEl) return;
+      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+      if (!videoEl) return;
 
-        // If an instance already exists for this index, do nothing
-        if (this.hlsPlayers.has(index)) return;
+      if (this.hlsPlayers.has(index)) return;
 
-        if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-          videoEl.src = hlsUrl;
-          return;
-        }
+      if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        videoEl.src = hlsUrl;
+        // On Safari (native HLS), wait for canplay then play
+        const onCanPlay = () => {
+          try {
+            if (this.userWantsSound) {
+              this.isMuted = false;
+              videoEl.muted = false;
+              videoEl.volume = 1.0;
+            }
+            videoEl.play().catch(() => {});
+          } catch (_) {}
+          videoEl.removeEventListener('canplay', onCanPlay);
+        };
+        videoEl.addEventListener('canplay', onCanPlay);
+        return;
+      }
 
-        if (Hls.isSupported()) {
-          const hls = new Hls({
-            lowLatencyMode: true,
-            backBufferLength: 60,
-          });
-          hls.loadSource(hlsUrl);
-          hls.attachMedia(videoEl);
-          hls.on(Hls.Events.ERROR, (_event, data) => {
-            console.error('HLS error', data);
-          });
-          this.hlsPlayers.set(index, hls);
-        }
-      } catch (e) {
-        console.error('Failed to setup HLS:', e);
+      if (Hls && Hls.isSupported()) {
+        const hls = new Hls({ lowLatencyMode: true, backBufferLength: 60 });
+        hls.loadSource(hlsUrl)
+        hls.attachMedia(videoEl)
+        this.hlsPlayers.set(index, hls)
+
+        const tryPlay = () => {
+          try {
+            if (this.userWantsSound) {
+              this.isMuted = false;
+              videoEl.muted = false;
+              videoEl.volume = 1.0;
+            }
+            videoEl.play().catch(() => {});
+          } catch (_) {}
+        };
+
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          // Media attached, wait for manifest then try play
+        });
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          tryPlay();
+        });
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          if (data?.fatal) {
+            try { hls.destroy(); } catch (_) {}
+            this.hlsPlayers.delete(index);
+          }
+        });
+        hls.on(Hls.Events.BUFFER_STALLED, () => { this.bufferingIndex = index; });
+        hls.on(Hls.Events.BUFFER_APPENDED, () => { if (this.bufferingIndex === index) this.bufferingIndex = null; });
+      }
+    },
+    // Toggle play/pause on tap
+    togglePlayPause(index) {
+      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+      if (!videoEl) return;
+      if (videoEl.paused) {
+        this.pausedOverlayIndex = null;
+        videoEl.play().catch(() => {});
+      } else {
+        videoEl.pause();
+        this.pausedOverlayIndex = index;
       }
     },
     // Destroy HLS instance for an index
@@ -373,13 +430,18 @@ export default defineComponent({
       try {
         const videos = await bastyonApi.fetchBShorts();
         
-        // Filter videos to include only those under 2 minutes (120 seconds)
-        this.playlist = videos.filter(video => video.duration < 120)
-          .map(video => ({
-            ...video,
-            userRating: 1 // Default rating
-          }));
-          
+        if (Array.isArray(videos)) {
+          this.playlist = videos.filter(v => v.hasVideo !== false)
+          // Optionally filter by duration < 2 minutes
+          this.playlist = this.playlist.filter(v => !v.duration || v.duration < 120)
+          this.$nextTick(() => {
+            // Ensure video elements ref is updated
+            this.cacheVideoElements();
+            // Initialize HLS for the first video immediately for reliable autoplay
+            this.setupHlsForIndex(0);
+          });
+        }
+        
         // Initialize video cache
         this.initializeVideoCache();
       } catch (error) {
@@ -806,18 +868,13 @@ export default defineComponent({
       console.log(`Video ${index} can play`);
     },
     onVideoPlay(index) {
-      // Handle video play event
-      if (index === this.currentIndex) {
-        this.isVideoPlaying = true;
-        console.log(`Video ${index} playing`);
-      }
+      console.log(`Video ${index} playing`);
+      if (this.bufferingIndex === index) this.bufferingIndex = null;
+      if (this.pausedOverlayIndex === index) this.pausedOverlayIndex = null;
     },
     onVideoPause(index) {
-      // Handle video pause event
-      if (index === this.currentIndex) {
-        this.isVideoPlaying = false;
-        console.log(`Video ${index} paused`);
-      }
+      console.log(`Video ${index} paused`);
+      this.pausedOverlayIndex = index;
     },
   },
   mounted() {
@@ -902,6 +959,62 @@ export default defineComponent({
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* Buffering overlay */
+.buffering-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Pause overlay */
+.pause-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.25);
+  color: #fff;
+  font-size: 60px;
+  line-height: 1;
+}
+
+/* Avatar fallback */
+.uploader-avatar-fallback {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #555;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  margin-right: 8px;
 }
 
 .video-info {

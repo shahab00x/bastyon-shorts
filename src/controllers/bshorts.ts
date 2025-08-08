@@ -76,7 +76,7 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
     const items: any[] = Array.isArray(payload.items) ? payload.items : []
     console.log(`Received ${items.length} playlist items`)
 
-    const videos = items.map((item: any) => {
+    let videos = items.map((item: any) => {
       const duration = Number(item?.peertube?.durationSeconds ?? 0) || 0
       const formattedDate = item?.timestamp
         ? new Date(item.timestamp * 1000).toLocaleDateString()
@@ -93,6 +93,12 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         tags = []
       }
 
+      // Ratings
+      const score = Number(item?.ratings?.score ?? 0) || 0
+      const ratingsCount = Number(item?.ratings?.ratingsCount ?? 0) || 0
+      const averageRatingRaw = ratingsCount > 0 ? score / ratingsCount : 1
+      const averageRating = Math.max(1, Math.min(5, averageRatingRaw))
+
       return {
         id: item.video_hash,
         hash: item.video_hash,
@@ -105,8 +111,12 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         duration,
         timestamp: item?.timestamp ? new Date(item.timestamp * 1000).toISOString() : new Date().toISOString(),
         formattedDate,
-        likes: item?.ratings?.score || item?.ratings?.ratingUp || 0,
-        comments: item?.ratings?.ratingsCount || 0,
+        likes: score || item?.ratings?.ratingUp || 0,
+        // Keep comments as-is from source if present; do not overwrite with ratingsCount
+        comments: typeof item?.commentsCount === 'number' ? item.commentsCount : (typeof item?.comments === 'number' ? item.comments : 0),
+        ratingsCount,
+        averageRating,
+        userRating: averageRating,
         commentData: [] as any[],
         type: 'video',
         tags,
@@ -119,7 +129,81 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
       }
     })
 
-    // Respond with the mapped videos
+    // Enrich with Bastyon user profiles (best-effort)
+    try {
+      const pocketNetProxyInstance = await getPocketNetProxyInstance()
+      const uniqueAddresses = Array.from(new Set(videos.map(v => v.uploaderAddress).filter(Boolean))) as string[]
+      console.log(`Enriching ${uniqueAddresses.length} unique profiles via rpc.getuserprofile`)
+
+      // Fetch profiles one-by-one to be safe with RPC shape
+      const profileMap = new Map<string, any>()
+      for (const addr of uniqueAddresses) {
+        try {
+          // Prefer address + shortForm per user's example
+          let prof: any = null
+          try {
+            // Cast to any to allow { address, shortForm } shape without TS error
+            prof = await (pocketNetProxyInstance.rpc as any).getuserprofile({ address: addr, shortForm: 'yes' })
+          } catch (e1) {
+            // Fallback to addresses array shape
+            const resp = await pocketNetProxyInstance.rpc.getuserprofile({ addresses: [addr] } as any)
+            prof = Array.isArray(resp) ? resp[0] : resp
+          }
+          if (prof) profileMap.set(addr, prof)
+        } catch (e) {
+          console.warn(`getuserprofile failed for ${addr}:`, e instanceof Error ? e.message : e)
+        }
+      }
+
+      videos = videos.map(v => {
+        const prof = profileMap.get(v.uploaderAddress)
+        if (prof) {
+          return {
+            ...v,
+            uploader: prof?.name || prof?.nick || v.uploader,
+            uploaderReputation: prof?.reputation ?? prof?.rep ?? undefined,
+            uploaderAvatar: prof?.avatar || prof?.i || undefined,
+          }
+        }
+        return v
+      })
+    } catch (e) {
+      console.warn('Profile enrichment skipped due to error:', e instanceof Error ? e.message : e)
+    }
+
+    // Enrich with a small set of comments via Bastyon RPC (best-effort, non-fatal)
+    try {
+      const pocketNetProxyInstance = await getPocketNetProxyInstance()
+      // Limit comment enrichment to first 10 items to keep latency low
+      const subset = videos.slice(0, Math.min(10, videos.length))
+      await Promise.all(subset.map(async v => {
+        try {
+          // Use the user's suggested param shape
+          const content: any = await (pocketNetProxyInstance.rpc as any).getcontent({ postTxHash: v.hash })
+          const comments: any[] = []
+          const rawComments = content?.comments || content?.data?.comments || []
+          for (const c of rawComments.slice(0, 5)) {
+            comments.push({
+              id: c?.id || c?.hash || String(Math.random()),
+              user: c?.address?.substring(0, 8) || c?.user || 'Anonymous',
+              text: typeof c?.msg === 'string' ? c.msg : (c?.message || ''),
+              timestamp: c?.time ? new Date(c.time * 1000).toISOString() : undefined,
+            })
+          }
+          v.commentData = comments
+          if (typeof v.comments === 'number' && Number.isFinite(content?.commentscount)) {
+            v.comments = content.commentscount
+          }
+        } catch (err) {
+          // Non-fatal
+          console.warn('getcontent failed for', v.hash)
+        }
+      }))
+    } catch (e) {
+      console.warn('Comments enrichment skipped due to error:', e instanceof Error ? e.message : e)
+    }
+
+    // Respond with the mapped & enriched videos
     res.json(videos)
   } catch (error) {
     console.error('Error fetching short videos from playlists API:', error)
