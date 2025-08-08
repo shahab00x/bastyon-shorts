@@ -29,7 +29,7 @@
           ref="videoElements"
           :src="getVideoSource(video.url)" 
           autoplay 
-          muted 
+          :muted="isMuted" 
           playsinline
           webkit-playsinline
           x5-playsinline
@@ -40,6 +40,14 @@
           @play="onVideoPlay(index)"
           @pause="onVideoPause(index)"
         ></video>
+
+        <!-- Unmute hint/control -->
+        <button 
+          v-if="isMuted" 
+          class="unmute-btn" 
+          @click.stop="unmuteCurrentVideo(index)"
+          aria-label="Unmute"
+        >Tap for sound 🔊</button>
         
         <div class="video-info">
           <div class="bottom-section">
@@ -72,10 +80,12 @@
                   ★
                 </span>
               </div>
+              <div class="likes-count">{{ video.likes || 0 }} likes</div>
             </div>
             
             <div class="comments-icon" @click="toggleCommentsDrawer">
               💬
+              <span class="comments-badge">{{ video.comments || 0 }}</span>
             </div>
             
             <div class="share-btn" @click="shareVideo">
@@ -256,6 +266,10 @@ export default defineComponent({
       ,
       // Keep track of HLS instances per slide index
       hlsPlayers: new Map()
+      ,
+      // audio state
+      isMuted: true,
+      userWantsSound: false
     };
   },
   computed: {
@@ -335,6 +349,21 @@ export default defineComponent({
         try { inst.destroy(); } catch (_) {}
         this.hlsPlayers.delete(idx);
       }
+    },
+    // Unmute current video after user gesture and remember preference
+    unmuteCurrentVideo(index) {
+      this.userWantsSound = true;
+      this.isMuted = false;
+      this.$nextTick(() => {
+        const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+        if (videoEl) {
+          try {
+            videoEl.muted = false;
+            videoEl.volume = 1.0;
+            videoEl.play().catch(() => {});
+          } catch (_) {}
+        }
+      });
     },
     async fetchVideos() {
       // Set loading state
@@ -698,7 +727,15 @@ export default defineComponent({
             text: this.newComment,
             timestamp: new Date().toISOString()
           };
-          this.currentVideo.comments.push(comment);
+          // Ensure commentData exists and is an array
+          if (!Array.isArray(this.currentVideo.commentData)) {
+            this.currentVideo.commentData = [];
+          }
+          this.currentVideo.commentData.push(comment);
+          // Increment numeric comments count if present
+          if (typeof this.currentVideo.comments === 'number') {
+            this.currentVideo.comments += 1;
+          }
           this.newComment = '';
         } catch (error) {
           console.error('Error posting comment:', error);
@@ -710,7 +747,13 @@ export default defineComponent({
             text: this.newComment,
             timestamp: new Date().toISOString()
           };
-          this.currentVideo.comments.push(comment);
+          if (!Array.isArray(this.currentVideo.commentData)) {
+            this.currentVideo.commentData = [];
+          }
+          this.currentVideo.commentData.push(comment);
+          if (typeof this.currentVideo.comments === 'number') {
+            this.currentVideo.comments += 1;
+          }
           this.newComment = '';
         }
       }
@@ -747,6 +790,12 @@ export default defineComponent({
         this.$nextTick(() => {
           const videoElement = this.$refs.videoElements?.[index];
           if (videoElement) {
+            // Honor user's sound preference on subsequent videos
+            if (this.userWantsSound) {
+              this.isMuted = false;
+              videoElement.muted = false;
+              videoElement.volume = 1.0;
+            }
             videoElement.play().catch(e => console.log('Autoplay failed:', e));
           }
         });
@@ -820,6 +869,33 @@ export default defineComponent({
 
 .video-slide.active {
   opacity: 1;
+}
+
+.unmute-btn {
+  position: absolute;
+  bottom: 90px;
+  left: 16px;
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 20px;
+  font-size: 14px;
+}
+
+.likes-count {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ddd;
+}
+
+.comments-badge {
+  margin-left: 6px;
+  background: #e74c3c;
+  color: #fff;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 12px;
 }
 
 .video-slide video {
