@@ -40,6 +40,8 @@ function normalizeAvatarUrl(url: string): string {
 import type { Request, Response } from 'express'
 import axios from 'axios'
 import { getPocketNetProxyInstance } from '../lib'
+import fs from 'fs/promises'
+import path from 'path'
 
 // Function to fetch PeerTube video details
 async function fetchPeerTubeVideoDetails(host: string, videoId: string) {
@@ -152,6 +154,22 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
     } catch (e:any) {
       console.warn('Upstream playlists API failed, responding with empty list:', e?.message || e)
       items = []
+    }
+
+    // Fallback: if upstream returned nothing, try static playlist file under public/
+    if (!Array.isArray(items) || items.length === 0) {
+      try {
+        const staticPath = path.resolve(process.cwd(), 'public', 'playlists', String(lang), 'latest.json')
+        console.log('Attempting static playlist fallback at', staticPath)
+        const file = await fs.readFile(staticPath, 'utf8')
+        const data = JSON.parse(file)
+        if (Array.isArray(data)) items = data
+        else if (Array.isArray(data?.items)) items = data.items
+        else items = []
+        console.log(`Static playlist fallback loaded ${items.length} items`)
+      } catch (err:any) {
+        console.warn('Static playlist fallback failed:', err?.message || err)
+      }
     }
 
     // Dedupe upstream items by video_hash/hash to avoid repeated entries
@@ -351,9 +369,10 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         const details = await fetchPeerTubeVideoDetails(info.host, info.id)
         try {
           // PeerTube v4+: views at details.views or details.stats.viewers/views
-          const maybe = (details && (details.views ?? details?.stats?.viewers ?? details?.stats?.views))
-          if (Number.isFinite(maybe)) {
-            v.views = Number(maybe)
+          const maybe = details?.views ?? details?.stats?.viewers ?? details?.stats?.views
+          const n = Number(maybe)
+          if (Number.isFinite(n)) {
+            v.views = n
           }
         } catch {}
       })

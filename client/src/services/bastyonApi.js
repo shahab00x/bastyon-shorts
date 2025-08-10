@@ -22,9 +22,15 @@ export async function fetchPlaylist(lang = 'en') {
 }
 
 // Fetch all videos with duration < 2 minutes
-export async function fetchBShorts() {
+export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
   try {
-    const response = await fetch(`${API_BASE_URL}/videos/bshorts`);
+    const params = new URLSearchParams();
+    if (lang) params.set('lang', lang);
+    if (limit != null) params.set('limit', String(limit));
+    if (offset != null) params.set('offset', String(offset));
+    const qs = params.toString();
+    const url = `${API_BASE_URL}/videos/bshorts${qs ? `?${qs}` : ''}`;
+    const response = await fetch(url);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);

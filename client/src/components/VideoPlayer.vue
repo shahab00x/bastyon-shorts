@@ -781,16 +781,18 @@ export default defineComponent({
       try {
         let videos = []
         const effectiveLang = this.supportedLangs.includes(this.lang) ? this.lang : 'en'
+        // Prefer server-enriched results (includes views, comments enrichment, profiles)
         try {
-          videos = await bastyonApi.fetchPlaylist(effectiveLang);
+          videos = await bastyonApi.fetchBShorts(effectiveLang);
         } catch (e) {
-          console.warn('Static playlist fetch failed, falling back to API:', e);
+          console.warn('API fetch failed, will try static playlist:', e);
         }
+        // Fallback to static playlist if API empty or failed
         if (!Array.isArray(videos) || videos.length === 0) {
           try {
-            videos = await bastyonApi.fetchBShorts();
+            videos = await bastyonApi.fetchPlaylist(effectiveLang);
           } catch (e) {
-            console.warn('API fetch failed:', e);
+            console.warn('Static playlist fetch failed:', e);
             videos = []
           }
         }
