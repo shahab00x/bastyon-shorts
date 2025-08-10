@@ -58,8 +58,8 @@ export async function fetchProfiles(addresses) {
   return await res.json(); // { count, profiles: [ ... ] }
 }
 
-// Fetch comments for a video hash/txid
-export async function fetchComments(hash, { limit = 50, offset = 0, includeProfiles = true, includeReplies = false, repliesLimit = 10 } = {}) {
+// Fetch comments for a video hash/txid. If parentid is provided, fetch replies for that comment.
+export async function fetchComments(hash, { limit = 50, offset = 0, includeProfiles = true, includeReplies = false, repliesLimit = 10, parentid } = {}) {
   if (!hash) throw new Error('hash is required');
   const params = new URLSearchParams();
   params.set('hash', hash);
@@ -68,6 +68,7 @@ export async function fetchComments(hash, { limit = 50, offset = 0, includeProfi
   if (includeProfiles) params.set('includeProfiles', '1');
   if (includeReplies) params.set('includeReplies', '1');
   if (repliesLimit != null) params.set('repliesLimit', String(repliesLimit));
+  if (parentid != null) params.set('parentid', String(parentid));
   const url = `${API_BASE_URL}/videos/comments?${params.toString()}`;
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Comments fetch failed: ${res.status}`);

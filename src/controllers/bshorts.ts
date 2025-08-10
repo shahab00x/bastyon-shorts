@@ -682,6 +682,7 @@ export async function getUserProfile(req: Request, res: Response): Promise<void>
 
     const pocketNetProxyInstance = await getPocketNetProxyInstance()
     const rpcAny = pocketNetProxyInstance.rpc as any
+    // Removed erroneous replies-fetch block that belonged to comments controller.
 
     async function fetchOne(addr: string): Promise<any | null> {
       const attempts = [
@@ -756,24 +757,148 @@ export async function getUserProfile(req: Request, res: Response): Promise<void>
  * Query params:
  * - hash: string (video txid)
  * - limit: number (default 50)
- * - offset: number (default 0)
- * - includeProfiles: boolean ("1"/"true" to enrich commenter profiles)
- * - includeReplies: boolean ("1"/"true" to include first-level replies for each top-level comment)
- * - repliesLimit: number (default 10, max replies to fetch per parent when includeReplies is on)
  */
 export async function getComments(req: Request, res: Response): Promise<void> {
   try {
-    const hash = typeof req.query.hash === 'string' ? req.query.hash.trim() : ''
+    const hash = String(req.query.hash ?? '')
+    if (!hash) { res.status(400).json({ message: 'hash is required' }); return }
     const limit = Number.parseInt(String(req.query.limit ?? '50'), 10) || 50
     const offset = Number.parseInt(String(req.query.offset ?? '0'), 10) || 0
-    const includeProfiles = String(req.query.includeProfiles ?? '').toLowerCase() === '1' || String(req.query.includeProfiles ?? '').toLowerCase() === 'true'
-    const debug = String(req.query.debug ?? '').toLowerCase() === '1' || String(req.query.debug ?? '').toLowerCase() === 'true'
-    const includeReplies = String(req.query.includeReplies ?? '').toLowerCase() === '1' || String(req.query.includeReplies ?? '').toLowerCase() === 'true'
-    const repliesLimitRaw = Number.parseInt(String(req.query.repliesLimit ?? '10'), 10)
-    const repliesLimit = Number.isFinite(repliesLimitRaw) && repliesLimitRaw > 0 ? Math.min(repliesLimitRaw, 50) : 10
+    const includeProfiles = ['1','true','yes'].includes(String(req.query.includeProfiles ?? '1').toLowerCase())
+    const includeReplies = ['1','true','yes'].includes(String(req.query.includeReplies ?? '0').toLowerCase())
+    const repliesLimit = Number.parseInt(String(req.query.repliesLimit ?? '10'), 10) || 10
+    const parentid = req.query.parentid != null ? String(req.query.parentid) : undefined
+    const debug = ['1','true','yes'].includes(String(req.query.debug ?? '0').toLowerCase())
 
-    if (!hash) {
-      res.status(400).json({ message: 'Missing required query parameter: hash' })
+    // If only replies for a specific parent are requested
+    if (parentid) {
+      const pocketNetProxyInstance = await getPocketNetProxyInstance()
+      const rpcAny = pocketNetProxyInstance.rpc as any
+      let respReplies: any = null
+      const attemptsReplies = [
+        () => rpcAny.getcomments([String(hash), String(parentid), '']),
+        () => rpcAny.getcomments([String(hash), String(parentid)]),
+        () => rpcAny.getcomments({ postid: String(hash), parentid: String(parentid) }),
+      ]
+      for (const tryCall of attemptsReplies) {
+        try {
+          respReplies = await tryCall()
+          if (respReplies) break
+        } catch {}
+      }
+
+      const list: any[] = Array.isArray(respReplies)
+        ? respReplies
+        : (
+          respReplies?.comments
+          || respReplies?.data?.comments
+          || (Array.isArray(respReplies?.data) ? respReplies.data : undefined)
+          || respReplies?.result?.comments
+          || respReplies?.result?.data?.comments
+          || (Array.isArray(respReplies?.result?.data) ? respReplies.result.data : undefined)
+          || []
+        )
+
+      const extractTextLocal = (msg: any): string => {
+        try {
+          if (typeof msg === 'string') {
+            const s = msg.trim()
+            if (s.startsWith('{') && s.endsWith('}')) {
+              const j = JSON.parse(s)
+              return String(j?.message ?? j?.msg ?? j?.comment ?? j?.body ?? '')
+            }
+            return s
+          }
+          if (msg && typeof msg === 'object') {
+            return String(msg.message ?? msg.msg ?? msg.comment ?? msg.body ?? '')
+          }
+        } catch {}
+        return ''
+      }
+
+      const replies = list.map((rc: any) => {
+        const rAddr = rc?.address || rc?.useraddress || rc?.user || undefined
+        const rProf = rc?.userprofile || rc?.profile || rc?.userProfile || undefined
+        const rName = extractDisplayName(rProf)
+        const rAvatar = extractAvatarUrl(rProf)
+        const rRep = typeof rProf?.reputation === 'number' ? rProf.reputation : (typeof rProf?.rep === 'number' ? rProf.rep : undefined)
+        const rId = rc?.id || rc?.hash || rc?.commentid || rc?.txid || undefined
+        return {
+          id: rId,
+          address: rAddr,
+          user: rName || (typeof rAddr === 'string' ? `${rAddr.substring(0, 6)}…${rAddr.substring(rAddr.length - 4)}` : (rc?.user || 'Anonymous')),
+          text: extractTextLocal(rc?.msg ?? rc?.message ?? rc?.comment ?? rc?.body),
+          timestamp: rc?.time ? new Date(rc.time * 1000).toISOString() : undefined,
+          authorName: rName,
+          authorAvatar: rAvatar,
+          authorReputation: rRep,
+          author: { address: rAddr, name: rName, avatar: rAvatar, reputation: rRep },
+          replies: [] as any[],
+          raw: rc,
+        }
+      })
+
+      const result: any = {
+        hash,
+        parentid,
+        limit,
+        offset,
+        count: Array.isArray(replies) ? replies.length : 0,
+        comments: replies,
+      }
+
+      if (includeProfiles) {
+        const addrs = Array.from(new Set(replies.map((r: any) => r.address).filter(Boolean))) as string[]
+        if (addrs.length) {
+          const profilesMap: Record<string, any> = {}
+          for (const a of addrs) {
+            try {
+              const attempts = [
+                () => rpcAny.getuserprofile({ address: a, shortForm: 'basic' }),
+                () => rpcAny.getuserprofile({ address: a, shortForm: 'yes' }),
+                () => rpcAny.getuserprofile({ address: a }),
+                () => rpcAny.getuserprofile({ addresses: [a] }),
+              ]
+              let p: any = null
+              for (const at of attempts) {
+                try {
+                  const r = await at()
+                  p = Array.isArray(r) ? r[0] : r
+                  if (p) break
+                } catch {}
+              }
+              if (p) {
+                const name = extractDisplayName(p)
+                const avatar = extractAvatarUrl(p)
+                const rep = typeof p?.reputation === 'number' ? p.reputation : (typeof p?.rep === 'number' ? p.rep : undefined)
+                profilesMap[a] = { address: a, name, reputation: rep, avatar }
+              }
+            } catch {}
+          }
+          result.profiles = profilesMap
+          // backfill
+          for (const r of replies) {
+            const prof = profilesMap[r.address]
+            if (!prof) continue
+            if (!r.author) {
+              r.author = {
+                address: r.address,
+                name: r.authorName,
+                avatar: r.authorAvatar,
+                reputation: r.authorReputation,
+              }
+            }
+            if (!r.authorName && prof.name) r.authorName = prof.name
+            if (!r.authorAvatar && prof.avatar) r.authorAvatar = prof.avatar
+            if (r.authorReputation == null && typeof prof.reputation === 'number') r.authorReputation = prof.reputation
+            if (!r.author.name && prof.name) r.author.name = prof.name
+            if (!r.author.avatar && prof.avatar) r.author.avatar = prof.avatar
+            if (r.author.reputation == null && typeof prof.reputation === 'number') r.author.reputation = prof.reputation
+          }
+        }
+      }
+
+      res.status(200).json(result)
       return
     }
 
@@ -879,13 +1004,17 @@ export async function getComments(req: Request, res: Response): Promise<void> {
       const displayUser = nameFromProfile
         || (typeof addr === 'string' ? `${addr.substring(0, 6)}…${addr.substring(addr.length - 4)}` : (c?.user || 'Anonymous'))
       const reputationFromProfile = typeof profile?.reputation === 'number' ? profile.reputation : (typeof profile?.rep === 'number' ? profile.rep : undefined)
+      // Parse children/reply count robustly (may arrive as string)
+      const childrenRaw = c?.children ?? c?.replies ?? c?.childrenCount
+      const childrenNum = Number(childrenRaw)
+      const parsedReplyCount = Number.isFinite(childrenNum) && childrenNum >= 0 ? childrenNum : undefined
       return {
         id,
         address: addr,
         user: displayUser,
         text: extractText(c?.msg ?? c?.message ?? c?.comment ?? c?.body),
         timestamp: c?.time ? new Date(c.time * 1000).toISOString() : undefined,
-        replyCount: Number.isFinite(c?.children) ? Number(c.children) : undefined,
+        replyCount: parsedReplyCount,
         authorName: nameFromProfile,
         authorAvatar: avatarFromProfile,
         authorReputation: reputationFromProfile,
@@ -905,8 +1034,11 @@ export async function getComments(req: Request, res: Response): Promise<void> {
       const pocketNetProxyInstance = await getPocketNetProxyInstance()
       const rpcAny = pocketNetProxyInstance.rpc as any
 
+      const hasReplies = (val: any) => {
+        const n = Number(val); return Number.isFinite(n) && n > 0
+      }
       const parentsNeedingReplies = comments
-        .filter((c: any) => (Number.isFinite(c.replyCount) ? c.replyCount > 0 : (c.raw && Number.isFinite(c.raw.children) ? c.raw.children > 0 : false)))
+        .filter((c: any) => hasReplies(c.replyCount) || hasReplies(c?.raw?.children))
         .slice(0, limit) // keep within initial page
 
       const fetchRepliesForParent = async (parentId: string) => {
@@ -1019,7 +1151,14 @@ export async function getComments(req: Request, res: Response): Promise<void> {
           if (!obj) return
           const prof = profilesMap[obj.address]
           if (!prof) return
-          obj.author = obj.author || {}
+          if (!obj.author) {
+            obj.author = {
+              address: obj.address,
+              name: obj.authorName,
+              avatar: obj.authorAvatar,
+              reputation: obj.authorReputation,
+            }
+          }
           if (!obj.authorName && prof.name) obj.authorName = prof.name
           if (!obj.authorAvatar && prof.avatar) obj.authorAvatar = prof.avatar
           if (obj.authorReputation == null && typeof prof.reputation === 'number') obj.authorReputation = prof.reputation

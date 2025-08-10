@@ -1052,7 +1052,7 @@ export default defineComponent({
         if (!v) return
         const videoId = v.hash || v.id || v.txid
         if (!videoId) return
-        const result = await bastyonApi.fetchComments(videoId, { limit: 50, includeProfiles: true, includeReplies: true, repliesLimit: 10 })
+        const result = await bastyonApi.fetchComments(videoId, { limit: 50, includeProfiles: true, includeReplies: false, repliesLimit: 10 })
         const profiles = result?.profiles || {}
         const readScores = (obj) => {
           const raw = obj && obj.raw ? obj.raw : obj
@@ -1105,12 +1105,50 @@ export default defineComponent({
         console.warn('Failed to load comments:', e)
       }
     },
-    toggleReplies(cIdx) {
+    async toggleReplies(cIdx) {
       const v = this.currentVideo
       if (!v || !Array.isArray(v.commentData)) return
       const comment = v.commentData[cIdx]
       if (!comment) return
-      comment.showReplies = !comment.showReplies
+      const opening = !comment.showReplies
+      comment.showReplies = opening
+      if (opening && (!Array.isArray(comment.replies) || comment.replies.length === 0)) {
+        try {
+          const videoId = v.hash || v.id || v.txid
+          if (!videoId || !comment.id) return
+          const result = await bastyonApi.fetchComments(videoId, { limit: 50, includeProfiles: true, parentid: comment.id })
+          const profiles = result?.profiles || {}
+          const readScores = (obj) => {
+            const raw = obj && obj.raw ? obj.raw : obj
+            const up = raw?.scoreUp ?? raw?.scoreup ?? raw?.likes ?? raw?.upvotes ?? raw?.up ?? raw?.score?.up
+            const down = raw?.scoreDown ?? raw?.scoredown ?? raw?.dislikes ?? raw?.downvotes ?? raw?.down ?? raw?.score?.down
+            return {
+              scoreUp: Number.isFinite(up) ? Number(up) : 0,
+              scoreDown: Number.isFinite(down) ? Number(down) : 0,
+            }
+          }
+          const mapReply = (r, ri) => {
+            const rProf = r?.address ? profiles[r.address] : null
+            const rName = rProf?.name || r.authorName || r.author?.name || r.user || (r.address ? (r.address.substring(0, 6) + '…' + r.address.substring(r.address.length - 4)) : 'Anonymous')
+            const scores = readScores(r)
+            return {
+              id: r.id || r.hash || `r-${ri}-${Date.now()}`,
+              user: rName,
+              text: r.text || r.msg || '',
+              avatar: rProf?.avatar || r.authorAvatar || r.author?.avatar,
+              reputation: rProf?.reputation || r.authorReputation || r.author?.reputation,
+              timestamp: r.timestamp,
+              scoreUp: scores.scoreUp,
+              scoreDown: scores.scoreDown,
+            }
+          }
+          const repliesArr = (result?.comments || []).map((r, ri) => mapReply(r, ri))
+          this.$set ? this.$set(comment, 'replies', repliesArr) : (comment.replies = repliesArr)
+          if (Number.isFinite(result?.count)) comment.replyCount = Number(result.count)
+        } catch (e) {
+          console.warn('Failed to load replies:', e)
+        }
+      }
     },
     replyToComment(comment) {
       // Placeholder: hook into composer when available
