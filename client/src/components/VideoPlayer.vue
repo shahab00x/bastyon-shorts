@@ -154,7 +154,9 @@
       @touchstart="handleDrawerTouchStart"
       @touchmove="handleDrawerTouchMove"
       @touchend="handleDrawerTouchEnd"
-      @click="toggleDescriptionDrawer"
+      @touchstart.self="closeAnyDrawer"
+      @touchend.self="closeAnyDrawer"
+      @click.self="closeAnyDrawer"
     >
       <div class="drawer-content" @click.stop>
         <div class="drawer-header"><h3>Video Description</h3></div>
@@ -169,7 +171,9 @@
       @touchstart="handleDrawerTouchStart"
       @touchmove="handleDrawerTouchMove"
       @touchend="handleDrawerTouchEnd"
-      @click="toggleCommentsDrawer"
+      @touchstart.self="closeAnyDrawer"
+      @touchend.self="closeAnyDrawer"
+      @click.self="closeAnyDrawer"
     >
       <div class="drawer-content" @click.stop>
         <div class="drawer-header"><h3>Comments</h3></div>
@@ -1033,22 +1037,41 @@ export default defineComponent({
         }
       }
       const scrollTop = contentEl ? (contentEl as HTMLElement).scrollTop : 0;
-      // Eligible only if gesture starts on backdrop or on header while scrolled to top
-      this.drawerSwipeEligible = !contentEl || (inHeader && scrollTop <= 0);
+      // Eligible if gesture starts on backdrop, anywhere when scrolled to top, or always on header
+      this.drawerSwipeEligible = !contentEl || inHeader || scrollTop <= 0;
       this.drawerSwipeFromHeader = !!inHeader;
     },
     handleDrawerTouchMove(event) {
       if (!this.drawerTouchStartY) return;
-      if (!this.drawerSwipeEligible) return; // allow normal scroll inside content
       const t = event.touches[0];
+      // If gesture started inside content and wasn't initially eligible,
+      // promote to eligible once user scrolls to top and continues pulling down.
+      if (!this.drawerSwipeEligible) {
+        const contentEl = this.drawerActiveContentEl as HTMLElement | null;
+        if (contentEl) {
+          const atTop = contentEl.scrollTop <= 0;
+          const deltaYProbe = t.clientY - this.drawerTouchStartY;
+          const deltaXProbe = t.clientX - this.drawerTouchStartX;
+          const verticalDominantProbe = Math.abs(deltaYProbe) > Math.abs(deltaXProbe) * 1.2;
+          if (atTop && verticalDominantProbe && deltaYProbe > 8) {
+            this.drawerSwipeEligible = true;
+            this.drawerSwipeFromHeader = false;
+            // Reset thresholds from the moment we reached the top for a natural feel
+            this.drawerTouchStartY = t.clientY;
+            this.drawerTouchStartTime = Date.now();
+          }
+        }
+        if (!this.drawerSwipeEligible) return; // still not eligible; let content scroll normally
+      }
       const deltaY = t.clientY - this.drawerTouchStartY;
       const deltaX = t.clientX - this.drawerTouchStartX;
       const verticalDominant = Math.abs(deltaY) > Math.abs(deltaX) * 1.2;
-      // Require a more deliberate downward pull to close. Heavier threshold if not starting in header.
+      // Reduce threshold when starting from header; prevent default scrolling when swiping on header
       const duration = Date.now() - this.drawerTouchStartTime;
-      let threshold = this.drawerSwipeFromHeader ? 120 : 180;
-      // If it's a fast flick from header, allow slightly smaller distance, else require more.
-      if (this.drawerSwipeFromHeader && duration < 250) threshold = 100;
+      let threshold = this.drawerSwipeFromHeader ? 30 : 120;
+      if (this.drawerSwipeFromHeader) {
+        try { event.preventDefault(); } catch (e) {}
+      }
       if (verticalDominant && deltaY > threshold) {
         this.showCommentsDrawer = false;
         this.showDescriptionDrawer = false;
@@ -1139,6 +1162,10 @@ export default defineComponent({
     },
     toggleDescriptionDrawer() {
       this.showDescriptionDrawer = !this.showDescriptionDrawer;
+    },
+    closeAnyDrawer() {
+      this.showCommentsDrawer = false;
+      this.showDescriptionDrawer = false;
     },
     async loadCommentsForCurrent() {
       try {
@@ -1969,11 +1996,13 @@ export default defineComponent({
   left: 0;
   right: 0;
   background-color: var(--background-darker);
-  padding: 0 20px 20px;
+  padding: 0 20px 0;
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
   max-height: 80%;
   overflow-y: auto;
+  overscroll-behavior: contain; /* avoid scroll chaining to page */
+  -webkit-overflow-scrolling: touch; /* smoother iOS scrolling */
   color: var(--text-primary);
 }
 
@@ -1995,6 +2024,7 @@ export default defineComponent({
   padding: 14px 20px 12px; /* move top spacing into header */
   margin: 0  -20px 10px;   /* stretch to edges inside drawer-content */
   border-bottom: 1px solid rgba(255,255,255,0.1);
+  touch-action: none; /* prevent scroll-before-close when swiping from header */
 }
 .drawer-header h3 { margin: 0; }
 
