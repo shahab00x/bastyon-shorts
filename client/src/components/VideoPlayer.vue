@@ -65,17 +65,7 @@
           aria-label="Unmute"
         >Tap for sound 🔊</button>
 
-        <!-- Light blue seekbar -->
-        <div 
-          class="seekbar"
-          @mousedown.stop.prevent="onSeekStart($event, index)"
-          @touchstart.stop.prevent="onSeekStart($event, index)"
-        >
-          <div class="seekbar-track" ref="seekbarTracks">
-            <div class="seekbar-buffered" :style="{ width: (bufferedPercents[index] || 0) + '%' }"></div>
-            <div class="seekbar-fill" :style="{ width: (progressPercents[index] || 0) + '%' }"></div>
-          </div>
-        </div>
+        
         
         <div class="video-info">
           <div class="bottom-section">
@@ -109,6 +99,18 @@
               @click="toggleDescriptionDrawer"
             >
               <p>{{ truncateDescription(video.description) }}</p>
+            </div>
+
+            <!-- Light blue seekbar below description & follow -->
+            <div 
+              class="seekbar"
+              @mousedown.stop.prevent="onSeekStart($event, index)"
+              @touchstart.stop.prevent="onSeekStart($event, index)"
+            >
+              <div class="seekbar-track" ref="seekbarTracks">
+                <div class="seekbar-buffered" :style="{ width: (bufferedPercents[index] || 0) + '%' }"></div>
+                <div class="seekbar-fill" :style="{ width: (progressPercents[index] || 0) + '%' }"></div>
+              </div>
             </div>
           </div>
           
@@ -1180,10 +1182,9 @@ export default defineComponent({
 <style scoped>
 /* Light blue themed seekbar inspired by TikTok/YouTube Shorts */
 .seekbar {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 72px; /* sit above bottom info and buttons */
+  position: relative; /* inside bottom-section flow */
+  width: 100%;
+  margin-top: 8px;
   height: 20px; /* tap target height */
   display: flex;
   align-items: center;

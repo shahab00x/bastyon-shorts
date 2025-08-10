@@ -146,14 +146,19 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         ? new Date(item.timestamp * 1000).toLocaleDateString()
         : 'Unknown date'
 
-      // Parse hashtags field which comes as a JSON-encoded string
+      // Parse hashtags: supports JSON array string or space-separated string like "#news #crypto"
       let tags: string[] = []
       try {
-        if (typeof item?.hashtags === 'string' && item.hashtags.trim().startsWith('[')) {
-          tags = JSON.parse(item.hashtags)
+        if (typeof item?.hashtags === 'string') {
+          const s = item.hashtags.trim()
+          if (s.startsWith('[')) {
+            tags = JSON.parse(s)
+          } else if (s.length) {
+            tags = s.split(/\s+/).map((t: string) => t.replace(/^#/, '')).filter(Boolean)
+          }
         }
       } catch (e) {
-        console.warn('Failed to parse hashtags JSON:', e)
+        console.warn('Failed to parse hashtags:', e)
         tags = []
       }
 
@@ -164,21 +169,26 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
       const averageRating = Math.max(1, Math.min(5, averageRatingRaw))
 
       const author = item?.author || {}
+      const topAuthorName = item.author_name
+      const topAuthorAvatar = item.author_avatar
+      const topAuthorRep = item.author_reputation
       return {
         id: item.video_hash,
         hash: item.video_hash,
         txid: item.video_hash,
         url: item.video_url, // keep peertube:// URL; client converts to direct MP4
         resolutions: [] as any[],
-        uploader: author?.name || author?.nickname || author?.nick || item?.author?.address || item.author_address || 'Unknown',
+        uploader: topAuthorName || author?.name || author?.nickname || author?.nick || item?.author?.address || item.author_address || 'Unknown',
         uploaderAddress: item.author_address,
         description: item.caption || item.description || '',
         duration,
         timestamp: item?.timestamp ? new Date(item.timestamp * 1000).toISOString() : new Date().toISOString(),
         formattedDate,
         likes: score || item?.ratings?.ratingUp || 0,
-        // Keep comments as-is from source if present; do not overwrite with ratingsCount
-        comments: typeof item?.commentsCount === 'number' ? item.commentsCount : (typeof item?.comments === 'number' ? item.comments : 0),
+        // Prefer comments_count; fallback to commentsCount or comments
+        comments: typeof item?.comments_count === 'number'
+          ? item.comments_count
+          : (typeof item?.commentsCount === 'number' ? item.commentsCount : (typeof item?.comments === 'number' ? item.comments : 0)),
         ratingsCount,
         averageRating,
         userRating: averageRating,
@@ -191,8 +201,8 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         rawPost: item,
         // Optional extra fields
         bastyonPostLink: item.bastyon_post_link,
-        uploaderAvatar: author?.avatar ? normalizeAvatarUrl(author.avatar) : undefined,
-        uploaderReputation: typeof author?.reputation === 'number' ? author.reputation : (typeof author?.rep === 'number' ? author.rep : undefined),
+        uploaderAvatar: topAuthorAvatar ? normalizeAvatarUrl(topAuthorAvatar) : (author?.avatar ? normalizeAvatarUrl(author.avatar) : undefined),
+        uploaderReputation: (typeof topAuthorRep === 'number' ? topAuthorRep : (typeof author?.reputation === 'number' ? author.reputation : (typeof author?.rep === 'number' ? author.rep : undefined))),
         views: undefined as number | undefined,
       }
     })

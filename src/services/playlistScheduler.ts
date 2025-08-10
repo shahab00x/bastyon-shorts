@@ -6,6 +6,42 @@ const LANGS = ['en', 'ru', 'de', 'fr', 'ko', 'es', 'it', 'zh'] as const
 
 type LangCode = typeof LANGS[number]
 
+// Determine if a JSON file contains an empty array (e.g. [] or whitespace-[])
+async function fileIsEmptyArray(p: string): Promise<boolean> {
+  try {
+    const raw = await fs.readFile(p, 'utf-8')
+    const trimmed = raw.trim()
+    if (!trimmed) return true
+    try {
+      const parsed = JSON.parse(trimmed)
+      return Array.isArray(parsed) && parsed.length === 0
+    } catch {
+      return trimmed === '[]'
+    }
+  } catch {
+    return false
+  }
+}
+
+// Remove any empty JSON playlist files in a directory (e.g., latest.json or playlist-*.json that are empty arrays)
+async function cleanupEmptyPlaylistFiles(dir: string): Promise<void> {
+  try {
+    const entries: any[] = await (fs as any).readdir(dir, { withFileTypes: true })
+    for (const ent of entries) {
+      try {
+        if (!ent.isFile()) continue
+        const name = ent.name || ''
+        if (!name.endsWith('.json')) continue
+        const full = path.join(dir, name)
+        if (await fileIsEmptyArray(full)) {
+          await fs.unlink(full)
+          console.warn(`[playlistScheduler] Removed empty playlist file: ${full}`)
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
 function mapItemsToClientVideos(items: any[]) {
   return items.map((item: any) => {
     const duration = Number(item?.peertube?.durationSeconds ?? 0) || 0
@@ -15,8 +51,13 @@ function mapItemsToClientVideos(items: any[]) {
 
     let tags: string[] = []
     try {
-      if (typeof item?.hashtags === 'string' && item.hashtags.trim().startsWith('[')) {
-        tags = JSON.parse(item.hashtags)
+      if (typeof item?.hashtags === 'string') {
+        const s = item.hashtags.trim()
+        if (s.startsWith('[')) {
+          tags = JSON.parse(s)
+        } else if (s.length) {
+          tags = s.split(/\s+/).map((t: string) => t.replace(/^#/, '')).filter(Boolean)
+        }
       }
     } catch (_e) {
       tags = []
@@ -27,20 +68,32 @@ function mapItemsToClientVideos(items: any[]) {
     const averageRatingRaw = ratingsCount > 0 ? score / ratingsCount : 1
     const averageRating = Math.max(1, Math.min(5, averageRatingRaw))
 
+    const uploaderAddress = item.author_address
+    const authorName = item.author_name || item?.author?.name || item?.author?.nickname || item?.author?.nick
+    const uploader = authorName || uploaderAddress || 'Unknown'
+    const uploaderAvatar = item.author_avatar || (item?.author?.avatar)
+    const uploaderReputation = typeof item?.author_reputation === 'number'
+      ? item.author_reputation
+      : (typeof item?.author?.reputation === 'number' ? item.author.reputation : undefined)
+
     return {
       id: item.video_hash,
       hash: item.video_hash,
       txid: item.video_hash,
       url: item.video_url, // keep peertube:// URL; client converts to direct MP4
       resolutions: [] as any[],
-      uploader: item?.author?.address || item.author_address || 'Unknown',
-      uploaderAddress: item.author_address,
+      uploader,
+      uploaderAddress,
+      uploaderAvatar,
+      uploaderReputation,
       description: item.caption || item.description || '',
       duration,
       timestamp: item?.timestamp ? new Date(item.timestamp * 1000).toISOString() : new Date().toISOString(),
       formattedDate,
       likes: score || item?.ratings?.ratingUp || 0,
-      comments: typeof item?.commentsCount === 'number' ? item.commentsCount : (typeof item?.comments === 'number' ? item.comments : 0),
+      comments: typeof item?.comments_count === 'number'
+        ? item.comments_count
+        : (typeof item?.commentsCount === 'number' ? item.commentsCount : (typeof item?.comments === 'number' ? item.comments : 0)),
       ratingsCount,
       averageRating,
       userRating: averageRating,
@@ -52,6 +105,7 @@ function mapItemsToClientVideos(items: any[]) {
       videoInfo: { peertube: item.peertube },
       rawPost: item,
       bastyonPostLink: item.bastyon_post_link,
+      views: undefined as number | undefined,
     }
   })
 }
@@ -102,9 +156,17 @@ async function generatePlaylistsOnce() {
       const rawItems = await fetchPlaylistItemsForLang(lang, 100)
       const videos = mapItemsToClientVideos(rawItems)
 
+      const outDir = path.join(process.cwd(), 'public', 'playlists', lang)
+
+      // If upstream returned zero items, do NOT overwrite latest.json; just cleanup empties
+      if (!videos.length) {
+        console.warn(`[playlistScheduler] ${lang}: upstream returned 0 items; skipping write. Cleaning existing empty files...`)
+        await cleanupEmptyPlaylistFiles(outDir)
+        continue
+      }
+
       const payload = videos // Array expected by client
 
-      const outDir = path.join(process.cwd(), 'public', 'playlists', lang)
       const latestPath = path.join(outDir, 'latest.json')
       await writeJsonFile(latestPath, payload)
 
@@ -112,6 +174,9 @@ async function generatePlaylistsOnce() {
       const ts = new Date().toISOString().replace(/[-:]/g, '').slice(0, 12)
       const snapshotPath = path.join(outDir, `playlist-${ts}.json`)
       await writeJsonFile(snapshotPath, payload)
+
+      // Clean up any lingering empty JSON files from previous runs
+      await cleanupEmptyPlaylistFiles(outDir)
 
       console.log(`[playlistScheduler] ${lang}: wrote ${videos.length} entries -> ${latestPath}`)
       if (videos.length < 100) {
