@@ -157,7 +157,7 @@
       @click="toggleDescriptionDrawer"
     >
       <div class="drawer-content" @click.stop>
-        <h3>Video Description</h3>
+        <div class="drawer-header"><h3>Video Description</h3></div>
         <p>{{ currentVideo?.description }}</p>
         <button @click="toggleDescriptionDrawer">Close</button>
       </div>
@@ -377,6 +377,11 @@ export default defineComponent({
       touchStartX: 0,
       touchStartTime: 0,
       drawerTouchStartY: 0, // For drawer swipe handling
+      drawerTouchStartX: 0,
+      drawerSwipeEligible: false,
+      drawerSwipeFromHeader: false,
+      drawerActiveContentEl: null as any,
+      drawerTouchStartTime: 0,
       // Treat as mobile only when touch is supported
       isMobile: (typeof window !== 'undefined') && (('ontouchstart' in window) || (navigator && navigator.maxTouchPoints > 0)),
       // Mouse-based swipe support (desktop)
@@ -995,16 +1000,39 @@ export default defineComponent({
       this.touchStartTime = 0;
     },
     handleDrawerTouchStart(event) {
-      this.drawerTouchStartY = event.touches[0].clientY;
+      const t = event.touches[0];
+      this.drawerTouchStartY = t.clientY;
+      this.drawerTouchStartX = t.clientX;
+      this.drawerTouchStartTime = Date.now();
+      // Track which content element (if any) the user started on
+      const contentEl = (event.target as Element)?.closest?.('.drawer-content');
+      this.drawerActiveContentEl = contentEl as any || null;
+      let inHeader = false;
+      if (contentEl) {
+        const headerEl = (contentEl as HTMLElement).querySelector('.drawer-header') as HTMLElement | null;
+        if (headerEl) {
+          const rect = headerEl.getBoundingClientRect();
+          inHeader = t.clientY >= rect.top && t.clientY <= rect.bottom && t.clientX >= rect.left && t.clientX <= rect.right;
+        }
+      }
+      const scrollTop = contentEl ? (contentEl as HTMLElement).scrollTop : 0;
+      // Eligible only if gesture starts on backdrop or on header while scrolled to top
+      this.drawerSwipeEligible = !contentEl || (inHeader && scrollTop <= 0);
+      this.drawerSwipeFromHeader = !!inHeader;
     },
     handleDrawerTouchMove(event) {
       if (!this.drawerTouchStartY) return;
-      
-      const currentY = event.touches[0].clientY;
-      const deltaY = currentY - this.drawerTouchStartY;
-      
-      // Only close when swiping down
-      if (deltaY > 50) { // Minimum swipe distance
+      if (!this.drawerSwipeEligible) return; // allow normal scroll inside content
+      const t = event.touches[0];
+      const deltaY = t.clientY - this.drawerTouchStartY;
+      const deltaX = t.clientX - this.drawerTouchStartX;
+      const verticalDominant = Math.abs(deltaY) > Math.abs(deltaX) * 1.2;
+      // Require a more deliberate downward pull to close. Heavier threshold if not starting in header.
+      const duration = Date.now() - this.drawerTouchStartTime;
+      let threshold = this.drawerSwipeFromHeader ? 120 : 180;
+      // If it's a fast flick from header, allow slightly smaller distance, else require more.
+      if (this.drawerSwipeFromHeader && duration < 250) threshold = 100;
+      if (verticalDominant && deltaY > threshold) {
         this.showCommentsDrawer = false;
         this.showDescriptionDrawer = false;
         this.drawerTouchStartY = 0;
@@ -1012,6 +1040,11 @@ export default defineComponent({
     },
     handleDrawerTouchEnd() {
       this.drawerTouchStartY = 0;
+      this.drawerTouchStartX = 0;
+      this.drawerSwipeEligible = false;
+      this.drawerSwipeFromHeader = false;
+      this.drawerActiveContentEl = null;
+      this.drawerTouchStartTime = 0;
     },
     initializeVideoCache() {
       // Initialize the video cache with the first few videos
@@ -1792,8 +1825,8 @@ export default defineComponent({
 
 /* Drawer polish */
 .drawer-content { border-top-left-radius: 12px; border-top-right-radius: 12px; }
-.description-drawer .drawer-content h3,
-.comments-drawer .drawer-content h3 { margin-top: 8px; }
+.description-drawer .drawer-content > h3,
+.comments-drawer .drawer-content > h3 { margin-top: 8px; }
 
 .bottom-section {
   position: absolute;
@@ -1899,7 +1932,7 @@ export default defineComponent({
   left: 0;
   right: 0;
   background-color: var(--background-darker);
-  padding: 20px;
+  padding: 0 20px 20px;
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
   max-height: 80%;
@@ -1922,10 +1955,11 @@ export default defineComponent({
   top: 0;
   z-index: 5;
   background-color: var(--background-darker);
-  padding-bottom: 10px;
-  margin-bottom: 10px;
+  padding: 14px 20px 12px; /* move top spacing into header */
+  margin: 0  -20px 10px;   /* stretch to edges inside drawer-content */
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
+.drawer-header h3 { margin: 0; }
 
 .add-comment {
   margin: 20px 0;
