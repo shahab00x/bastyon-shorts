@@ -214,7 +214,6 @@
                 backgroundRepeat: 'no-repeat'
               }"
             >
-              <sup v-if="comment.reputation != null" class="rep-badge">{{ formatAbbrev(comment.reputation) }}</sup>
             </div>
             <div v-else class="uploader-avatar-fallback">
               {{ (comment.user || '?').charAt(0).toUpperCase() }}
@@ -258,7 +257,6 @@
                       backgroundRepeat: 'no-repeat'
                     }"
                   >
-                    <sup v-if="reply.reputation != null" class="rep-badge">{{ formatAbbrev(reply.reputation) }}</sup>
                   </div>
                   <div v-else class="uploader-avatar-fallback">
                     {{ (reply.user || '?').charAt(0).toUpperCase() }}
@@ -2063,6 +2061,7 @@ export default defineComponent({
   justify-content: center;
   font-weight: 600;
   margin-right: 8px;
+  position: relative;
 }
 
 .video-info {
@@ -2078,7 +2077,7 @@ export default defineComponent({
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   margin-right: 8px;
   background-color: #333;
@@ -2086,9 +2085,9 @@ export default defineComponent({
 
 .rep-badge {
   position: absolute;
-  bottom: -4px;
-  right: -4px;
-  background: rgba(0,0,0,0.7);
+  top: -6px;
+  right: -6px;
+  background: rgba(0,0,0,0.8);
   color: #fff;
   border-radius: 8px;
   font-size: 10px;
