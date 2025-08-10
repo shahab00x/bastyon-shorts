@@ -222,7 +222,7 @@
             <div class="comment-content">
               <div class="comment-header">
                 <strong class="comment-author">{{ comment.user }}</strong>
-                <span class="comment-date">{{ comment.timestamp }}</span>
+                <span class="comment-date">{{ formatDateTime(comment.timestamp) }}</span>
               </div>
               <p class="comment-text">{{ comment.text }}</p>
               <div class="comment-actions">
@@ -266,7 +266,7 @@
                   <div class="comment-content">
                     <div class="comment-header">
                       <strong class="comment-author">{{ reply.user }}</strong>
-                      <span class="comment-date">{{ reply.timestamp }}</span>
+                      <span class="comment-date">{{ formatDateTime(reply.timestamp) }}</span>
                     </div>
                     <p class="comment-text">{{ reply.text }}</p>
                     <div class="comment-actions">
@@ -515,6 +515,14 @@ export default defineComponent({
         this.ensureOnlyActivePlaying();
         this.setupHlsForIndex(this.currentIndex);
         this.updateVideoFitForIndex(this.currentIndex);
+        // If the comments drawer is open, load comments for the new video and reset scroll
+        if (this.showCommentsDrawer) {
+          try {
+            const el = this.$refs.commentsContent;
+            if (el) el.scrollTop = 0;
+          } catch (_) {}
+          this.loadCommentsForCurrent(true);
+        }
         if (typeof oldIndex === 'number' && oldIndex !== newIndex) {
           // Clean up HLS on the previous slide to avoid GPU/decoder contention on mobile
           this.destroyHlsForIndex(oldIndex);
@@ -535,6 +543,22 @@ export default defineComponent({
       if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + 'M'
       if (n >= 1_000) return (n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1) + 'K'
       return String(n)
+    },
+    formatDateTime(input) {
+      try {
+        if (input == null) return ''
+        const d = typeof input === 'number' ? new Date(input) : new Date(String(input))
+        if (isNaN(d.getTime())) return String(input)
+        return d.toLocaleString(undefined, {
+          year: 'numeric',
+          month: 'short',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      } catch (_) {
+        return String(input) || ''
+      }
     },
     async ensureUploaderProfiles() {
       try {
