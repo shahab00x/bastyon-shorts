@@ -193,6 +193,64 @@
                 <span class="comment-date">{{ comment.timestamp }}</span>
               </div>
               <p class="comment-text">{{ comment.text }}</p>
+              <div class="comment-actions">
+                <button class="action-btn thumb" title="Like" aria-label="Like">
+                  👍
+                  <span v-if="Number(comment.scoreUp) > 0" class="count">{{ formatAbbrev(comment.scoreUp) }}</span>
+                </button>
+                <button class="action-btn thumb" title="Dislike" aria-label="Dislike">
+                  👎
+                  <span v-if="Number(comment.scoreDown) > 0" class="count">{{ formatAbbrev(comment.scoreDown) }}</span>
+                </button>
+                <button class="action-btn reply-btn" @click="replyToComment(comment)">Reply</button>
+              </div>
+              <div v-if="(comment.replies && comment.replies.length) || Number(comment.replyCount) > 0" class="replies-toggle">
+                <button class="action-btn toggle-replies" @click="toggleReplies(cIdx)">
+                  <template v-if="comment.showReplies">Hide replies</template>
+                  <template v-else>View replies ({{ (comment.replies && comment.replies.length) || comment.replyCount || 0 }})</template>
+                </button>
+              </div>
+              <div v-if="comment.showReplies && comment.replies && comment.replies.length" class="replies-list">
+                <div 
+                  v-for="(reply, rIdx) in comment.replies"
+                  :key="reply.id || rIdx"
+                  class="reply"
+                >
+                  <div 
+                    v-if="reply.avatar"
+                    class="usericon"
+                    :style="{
+                      backgroundImage: `url(${reply.avatar})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center center',
+                      backgroundRepeat: 'no-repeat'
+                    }"
+                  >
+                    <sup v-if="reply.reputation != null" class="rep-badge">{{ formatAbbrev(reply.reputation) }}</sup>
+                  </div>
+                  <div v-else class="uploader-avatar-fallback">
+                    {{ (reply.user || '?').charAt(0).toUpperCase() }}
+                  </div>
+                  <div class="comment-content">
+                    <div class="comment-header">
+                      <strong class="comment-author">{{ reply.user }}</strong>
+                      <span class="comment-date">{{ reply.timestamp }}</span>
+                    </div>
+                    <p class="comment-text">{{ reply.text }}</p>
+                    <div class="comment-actions">
+                      <button class="action-btn thumb" title="Like reply" aria-label="Like reply">
+                        👍
+                        <span v-if="Number(reply.scoreUp) > 0" class="count">{{ formatAbbrev(reply.scoreUp) }}</span>
+                      </button>
+                      <button class="action-btn thumb" title="Dislike reply" aria-label="Dislike reply">
+                        👎
+                        <span v-if="Number(reply.scoreDown) > 0" class="count">{{ formatAbbrev(reply.scoreDown) }}</span>
+                      </button>
+                      <button class="action-btn reply-btn" @click="replyToComment(reply)">Reply</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -994,18 +1052,50 @@ export default defineComponent({
         if (!v) return
         const videoId = v.hash || v.id || v.txid
         if (!videoId) return
-        const result = await bastyonApi.fetchComments(videoId, { limit: 50, includeProfiles: true })
+        const result = await bastyonApi.fetchComments(videoId, { limit: 50, includeProfiles: true, includeReplies: true, repliesLimit: 10 })
         const profiles = result?.profiles || {}
+        const readScores = (obj) => {
+          const raw = obj && obj.raw ? obj.raw : obj
+          const up = raw?.scoreUp ?? raw?.scoreup ?? raw?.likes ?? raw?.upvotes ?? raw?.up ?? raw?.score?.up
+          const down = raw?.scoreDown ?? raw?.scoredown ?? raw?.dislikes ?? raw?.downvotes ?? raw?.down ?? raw?.score?.down
+          return {
+            scoreUp: Number.isFinite(up) ? Number(up) : 0,
+            scoreDown: Number.isFinite(down) ? Number(down) : 0,
+          }
+        }
+        const mapReply = (r, ri) => {
+          const rProf = r?.address ? profiles[r.address] : null
+          const rName = rProf?.name || r.authorName || r.author?.name || r.user || (r.address ? (r.address.substring(0, 6) + '…' + r.address.substring(r.address.length - 4)) : 'Anonymous')
+          const scores = readScores(r)
+          return {
+            id: r.id || r.hash || `r-${ri}-${Date.now()}`,
+            user: rName,
+            text: r.text || r.msg || '',
+            avatar: rProf?.avatar || r.authorAvatar || r.author?.avatar,
+            reputation: rProf?.reputation || r.authorReputation || r.author?.reputation,
+            timestamp: r.timestamp,
+            scoreUp: scores.scoreUp,
+            scoreDown: scores.scoreDown,
+          }
+        }
         const mapped = (result?.comments || []).map((c, i) => {
           const prof = c.address ? profiles[c.address] : null
           const displayUser = prof?.name || c.authorName || c.author?.name || c.user || (c.address ? (c.address.substring(0, 6) + '…' + c.address.substring(c.address.length - 4)) : 'Anonymous')
+          const repliesArr = Array.isArray(c.replies) ? c.replies.map((r, ri) => mapReply(r, ri)) : []
+          const replyCount = Number.isFinite(c.replyCount) ? Number(c.replyCount) : (Array.isArray(repliesArr) ? repliesArr.length : 0)
+          const scores = readScores(c)
           return {
             id: c.id || c.hash || `c-${i}-${Date.now()}`,
             user: displayUser,
             text: c.text || c.msg || '',
             avatar: prof?.avatar || c.authorAvatar || c.author?.avatar,
             reputation: prof?.reputation || c.authorReputation || c.author?.reputation,
-            timestamp: c.timestamp
+            timestamp: c.timestamp,
+            replyCount,
+            replies: repliesArr,
+            showReplies: false,
+            scoreUp: scores.scoreUp,
+            scoreDown: scores.scoreDown,
           }
         })
         this.$set ? this.$set(v, 'commentData', mapped) : (v.commentData = mapped)
@@ -1014,6 +1104,18 @@ export default defineComponent({
       } catch (e) {
         console.warn('Failed to load comments:', e)
       }
+    },
+    toggleReplies(cIdx) {
+      const v = this.currentVideo
+      if (!v || !Array.isArray(v.commentData)) return
+      const comment = v.commentData[cIdx]
+      if (!comment) return
+      comment.showReplies = !comment.showReplies
+    },
+    replyToComment(comment) {
+      // Placeholder: hook into composer when available
+      console.log('Reply to:', comment)
+      alert('Reply composer coming soon')
     },
     async toggleCommentsDrawer() {
       const opening = !this.showCommentsDrawer
@@ -1750,6 +1852,16 @@ export default defineComponent({
   margin-top: 4px;
   display: block;
 }
+
+/* Comment actions */
+.comment-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.action-btn { background: transparent; border: 1px solid rgba(255,255,255,0.15); color: var(--text-primary); border-radius: 14px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.action-btn.thumb { color: #bbb; border-color: rgba(255,255,255,0.1); }
+.action-btn .count { margin-left: 6px; font-size: 12px; color: var(--text-secondary); }
+.replies-toggle { margin-top: 4px; }
+.toggle-replies { background: rgba(255,255,255,0.08); border: none; color: var(--text-primary); }
+.replies-list { margin-top: 8px; margin-left: 40px; display: flex; flex-direction: column; gap: 10px; border-left: 1px dashed rgba(255,255,255,0.15); padding-left: 10px; }
+.reply { display: flex; align-items: flex-start; gap: 10px; }
 
 /* Star Rating Styles */
 .star {
