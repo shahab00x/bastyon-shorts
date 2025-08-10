@@ -2,7 +2,7 @@
   <div class="video-player-container">
     <!-- Loading overlay -->
     <div v-if="loading" class="loading-overlay">
-      <div class="loading-spinner"></div>
+      <img class="logo-spinner" src="/bastyon_logo.png" alt="Loading" />
       <p>Loading videos...</p>
     </div>
     
@@ -33,12 +33,14 @@
         <button class="settings-top-right" @click.stop="toggleSettingsMenu" aria-label="Settings">⚙</button>
         <video 
           ref="videoElements"
-          :src="getVideoSource(video.url)" 
+          :src="currentIndex === index ? resolvedSrc(index, video) : ''" 
           :muted="isMuted" 
+          :autoplay="settings.autoplay"
           playsinline
           webkit-playsinline
           x5-playsinline
-          preload="metadata"
+          :preload="currentIndex === index ? 'metadata' : 'none'"
+          crossorigin="anonymous"
           :class="videoFit[index] === 'contain' ? 'fit-contain' : 'fit-cover'"
           @click="togglePlayPause($event, index)"
           @loadeddata="onVideoLoaded(index)"
@@ -147,6 +149,13 @@
       </div>
     </div>
     
+    <!-- Screen Tint Overlay -->
+    <div 
+      class="screen-tint" 
+      :class="{ 'visible': showDescriptionDrawer || showCommentsDrawer }" 
+      @click="closeAnyDrawer"
+    ></div>
+    
     <!-- Description Drawer -->
     <div 
       class="description-drawer" 
@@ -175,9 +184,17 @@
       @touchend.self="closeAnyDrawer"
       @click.self="closeAnyDrawer"
     >
-      <div class="drawer-content" @click.stop>
-        <div class="drawer-header"><h3>Comments</h3></div>
+      <div class="drawer-content" @click.stop ref="commentsContent" @scroll.passive="onCommentsScroll">
+        <div class="drawer-header"><h3>Comments<span v-if="currentVideo?.comments != null">({{ currentVideo.comments }})</span></h3></div>
         <div class="comments-list">
+          <!-- No comments state -->
+          <div v-if="!commentsLoading && (!currentVideo?.commentData || currentVideo.commentData.length === 0)" class="no-comments">
+            No comments yet
+          </div>
+          <!-- Loading comments indicator -->
+          <div v-if="commentsLoading && (!currentVideo?.commentData || currentVideo.commentData.length === 0)" class="comments-loading">
+            <img class="logo-spinner small" src="/bastyon_logo.png" alt="Loading comments" />
+          </div>
           <div 
             v-for="(comment, cIdx) in currentVideo?.commentData" 
             :key="comment.id || comment.hash || cIdx" 
@@ -264,6 +281,10 @@
               </div>
             </div>
           </div>
+        </div>
+        <!-- Loading more indicator -->
+        <div v-if="commentsLoading && currentVideo?.commentData && currentVideo.commentData.length > 0" class="comments-loading more">
+          <img class="logo-spinner small" src="/bastyon_logo.png" alt="Loading more comments" />
         </div>
         <!-- Sticky footer: add comment + donate -->
         <div class="drawer-footer">
@@ -445,7 +466,10 @@ export default defineComponent({
       currentTimes: [],
       progressPercents: [],
       bufferedPercents: [],
-      seekingIndex: null
+      seekingIndex: null,
+      // comments pagination/loading
+      commentsLoading: false,
+      commentsPageSize: 10
     };
   },
   computed: {
@@ -454,12 +478,16 @@ export default defineComponent({
     }
   },
   watch: {
-    currentIndex() {
+    currentIndex(newIndex, oldIndex) {
       // When the active slide changes, ensure only that slide plays
       this.$nextTick(() => {
         this.ensureOnlyActivePlaying();
         this.setupHlsForIndex(this.currentIndex);
         this.updateVideoFitForIndex(this.currentIndex);
+        if (typeof oldIndex === 'number' && oldIndex !== newIndex) {
+          // Clean up HLS on the previous slide to avoid GPU/decoder contention on mobile
+          this.destroyHlsForIndex(oldIndex);
+        }
       });
     }
   },
@@ -565,6 +593,31 @@ export default defineComponent({
         return url;
       }
     },
+    // Decide if we should use hls.js (MSE) instead of native
+    shouldUseHlsJs(index, video) {
+      try {
+        const v = video || this.playlist?.[index];
+        const hlsUrl = v?.videoInfo?.peertube?.hlsUrl;
+        const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+        const nativeHls = el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl');
+        return !!(hlsUrl && typeof Hls !== 'undefined' && Hls && Hls.isSupported() && !nativeHls);
+      } catch (_) { return false; }
+    },
+    // Resolve the best initial src for this device
+    resolvedSrc(index, video) {
+      try {
+        const v = video || this.playlist?.[index];
+        if (!v) return '';
+        const hlsUrl = v?.videoInfo?.peertube?.hlsUrl;
+        const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+        // If we'll use hls.js, do not bind a src so hls can take over cleanly
+        if (this.shouldUseHlsJs(index, v)) return '';
+        if (hlsUrl && el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl')) {
+          return hlsUrl;
+        }
+        return this.getVideoSource(v.url);
+      } catch (_) { return this.getVideoSource(video?.url); }
+    },
     async addComment() {
       try {
         const v = this.currentVideo
@@ -621,6 +674,11 @@ export default defineComponent({
               videoEl.muted = false;
               videoEl.volume = 1.0;
             }
+            if (!this.userWantsSound) {
+              // Ensure autoplay policy passes
+              this.isMuted = true;
+              videoEl.muted = true;
+            }
             videoEl.play().catch(() => {});
           } catch (_) {}
           videoEl.removeEventListener('canplay', onCanPlay);
@@ -642,6 +700,11 @@ export default defineComponent({
               videoEl.muted = false;
               videoEl.volume = 1.0;
             }
+            if (!this.userWantsSound) {
+              // Ensure autoplay policy passes
+              this.isMuted = true;
+              videoEl.muted = true;
+            }
             videoEl.play().catch(() => {});
           } catch (_) {}
         };
@@ -656,6 +719,26 @@ export default defineComponent({
           if (data?.fatal) {
             try { hls.destroy(); } catch (_) {}
             this.hlsPlayers.delete(index);
+            // Fallback to progressive MP4 if HLS fails (helps on some mobile/LAN setups)
+            try {
+              const fallback = this.getVideoSource(video?.url);
+              if (fallback) {
+                videoEl.src = fallback;
+                videoEl.load();
+                const onCanPlay = () => {
+                  try {
+                    if (this.userWantsSound) {
+                      this.isMuted = false;
+                      videoEl.muted = false;
+                      videoEl.volume = 1.0;
+                    }
+                    videoEl.play().catch(() => {});
+                  } catch (_) {}
+                  videoEl.removeEventListener('canplay', onCanPlay);
+                };
+                videoEl.addEventListener('canplay', onCanPlay);
+              }
+            } catch (_) {}
           }
         });
         hls.on(Hls.Events.BUFFER_STALLED, () => { this.bufferingIndex = index; });
@@ -1240,24 +1323,28 @@ export default defineComponent({
       this.showCommentsDrawer = false;
       this.showDescriptionDrawer = false;
     },
-    async loadCommentsForCurrent() {
+    async loadCommentsForCurrent(initial = false) {
       try {
         const v = this.currentVideo
         if (!v) return
-        // Only load/sort comments the first time per video
-        if (Array.isArray(v.commentData) && v.commentData.length) return
         const videoId = v.hash || v.id || v.txid
         if (!videoId) return
-        const result = await bastyonApi.fetchComments(videoId, { limit: 50, includeProfiles: true, includeReplies: false, repliesLimit: 10 })
+        if (v._commentsLoading) return
+        if (initial && Array.isArray(v.commentData) && v.commentData.length) return
+        v._commentsOffset = v._commentsOffset || 0
+        v._commentsHasMore = v._commentsHasMore !== undefined ? v._commentsHasMore : true
+        if (!v._commentsHasMore && !initial) return
+        v._commentsLoading = true
+        this.commentsLoading = true
+        const limit = this.commentsPageSize
+        const offset = v._commentsOffset || 0
+        const result = await bastyonApi.fetchComments(videoId, { limit, offset, includeProfiles: true, includeReplies: false, repliesLimit: 5 })
         const profiles = result?.profiles || {}
         const readScores = (obj) => {
           const raw = obj && obj.raw ? obj.raw : obj
           const up = raw?.scoreUp ?? raw?.scoreup ?? raw?.likes ?? raw?.upvotes ?? raw?.up ?? raw?.score?.up
           const down = raw?.scoreDown ?? raw?.scoredown ?? raw?.dislikes ?? raw?.downvotes ?? raw?.down ?? raw?.score?.down
-          return {
-            scoreUp: Number.isFinite(up) ? Number(up) : 0,
-            scoreDown: Number.isFinite(down) ? Number(down) : 0,
-          }
+          return { scoreUp: Number.isFinite(up) ? Number(up) : 0, scoreDown: Number.isFinite(down) ? Number(down) : 0 }
         }
         const mapReply = (r, ri) => {
           const rProf = r?.address ? profiles[r.address] : null
@@ -1274,14 +1361,14 @@ export default defineComponent({
             scoreDown: scores.scoreDown,
           }
         }
-        const mapped = (result?.comments || []).map((c, i) => {
+        const items = (result?.comments || []).map((c, i) => {
           const prof = c.address ? profiles[c.address] : null
           const displayUser = prof?.name || c.authorName || c.author?.name || c.user || (c.address ? (c.address.substring(0, 6) + '…' + c.address.substring(c.address.length - 4)) : 'Anonymous')
           const repliesArr = Array.isArray(c.replies) ? c.replies.map((r, ri) => mapReply(r, ri)) : []
           const replyCount = Number.isFinite(c.replyCount) ? Number(c.replyCount) : (Array.isArray(repliesArr) ? repliesArr.length : 0)
           const scores = readScores(c)
           return {
-            id: c.id || c.hash || `c-${i}-${Date.now()}`,
+            id: c.id || c.hash || `c-${offset + i}-${Date.now()}`,
             user: displayUser,
             text: c.text || c.msg || '',
             avatar: prof?.avatar || c.authorAvatar || c.author?.avatar,
@@ -1294,14 +1381,36 @@ export default defineComponent({
             scoreDown: scores.scoreDown,
           }
         })
-        // Sort by net score (scoreUp - scoreDown) descending on first load
-        mapped.sort((a, b) => ((b.scoreUp - b.scoreDown) - (a.scoreUp - a.scoreDown)))
-        this.$set ? this.$set(v, 'commentData', mapped) : (v.commentData = mapped)
-        // Update count if provided
-        if (Number.isFinite(result?.count)) v.comments = Number(result.count)
+        if (!Array.isArray(v.commentData)) v.commentData = []
+        v.commentData = v.commentData.concat(items)
+        v._commentsOffset += items.length
+        const total = Number.isFinite(result?.count) ? Number(result.count) : undefined
+        if (Number.isFinite(total)) {
+          v.comments = total
+          v._commentsHasMore = v._commentsOffset < total
+        } else {
+          v._commentsHasMore = items.length === limit
+        }
       } catch (e) {
         console.warn('Failed to load comments:', e)
+      } finally {
+        this.commentsLoading = false
+        if (this.currentVideo) this.currentVideo._commentsLoading = false
       }
+    },
+    onCommentsScroll() {
+      try {
+        const el = this.$refs.commentsContent
+        if (!el || !this.showCommentsDrawer) return
+        const threshold = 150
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - threshold) {
+          const v = this.currentVideo
+          if (!v) return
+          if (v._commentsHasMore && !v._commentsLoading) {
+            this.loadCommentsForCurrent(false)
+          }
+        }
+      } catch (_) {}
     },
     // Desktop swipe support
     handleMouseDown(e) {
@@ -1422,7 +1531,7 @@ export default defineComponent({
       const opening = !this.showCommentsDrawer
       this.showCommentsDrawer = opening;
       if (opening) {
-        await this.loadCommentsForCurrent()
+        await this.loadCommentsForCurrent(true)
       }
     },
     toggleSettingsMenu() {
@@ -1747,9 +1856,48 @@ export default defineComponent({
 .video-player-container {
   position: relative;
   height: 100vh;
+  height: 100dvh; /* stabilize on mobile address bar hide/show */
   width: 100vw;
   background-color: var(--background-dark);
   overflow: hidden;
+}
+
+/* App loading overlay with rotating Bastyon logo */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  z-index: 2000;
+  gap: 12px;
+}
+.logo-spinner {
+  width: 64px;
+  height: 64px;
+  animation: spin 1.1s linear infinite;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.logo-spinner.small { width: 36px; height: 36px; }
+
+/* Screen tint overlay for drawers */
+.screen-tint {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.0);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+  z-index: 900; /* behind drawers (1000), above video */
+}
+.screen-tint.visible {
+  opacity: 0.6;
+  background: rgba(0,0,0,0.6);
+  pointer-events: auto;
 }
 
 .video-swiper {
@@ -1841,7 +1989,6 @@ export default defineComponent({
 .video-slide video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 
 /* Prevent non-active videos from capturing taps */
@@ -2068,7 +2215,7 @@ export default defineComponent({
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.8);
+  background: transparent; /* separate screen tint overlay handles the dim */
   z-index: 1000;
   transform: translateY(100%);
   transition: transform 0.3s ease;
@@ -2083,7 +2230,9 @@ export default defineComponent({
   bottom: 0;
   left: 0;
   right: 0;
-  background-color: var(--background-darker);
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: saturate(120%) blur(10px);
+  -webkit-backdrop-filter: saturate(120%) blur(10px);
   padding: 0 20px 0;
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
@@ -2092,6 +2241,8 @@ export default defineComponent({
   overscroll-behavior: contain; /* avoid scroll chaining to page */
   -webkit-overflow-scrolling: touch; /* smoother iOS scrolling */
   color: var(--text-primary);
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.4);
+  border-top: 1px solid rgba(255,255,255,0.08);
 }
 
 .comments-drawer .drawer-content {
@@ -2108,12 +2259,19 @@ export default defineComponent({
   position: sticky;
   top: 0;
   z-index: 5;
-  background-color: var(--background-darker);
+  background: rgba(0,0,0,0.3);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   padding: 14px 20px 12px; /* move top spacing into header */
   margin: 0  -20px 10px;   /* stretch to edges inside drawer-content */
   border-bottom: 1px solid rgba(255,255,255,0.1);
   touch-action: none; /* prevent scroll-before-close when swiping from header */
 }
+
+/* Comments list states */
+.comments-loading { display: flex; align-items: center; justify-content: center; padding: 16px 0; }
+.comments-loading.more { padding: 10px 0 18px; }
+.no-comments { text-align: center; color: rgba(255,255,255,0.7); padding: 16px 0; }
 .drawer-header h3 { margin: 0; }
 
 /* Sticky footer inside drawer content */
@@ -2174,10 +2332,23 @@ export default defineComponent({
   font-size: 13px;
 }
 .donate-chip.active { background: rgba(255, 215, 0, 0.15); border-color: #FFD700; }
-.donate-chip.custom { border-style: dashed; }
+.donate-chip.custom { border: none; outline: none; -webkit-tap-highlight-color: transparent; }
+.donate-chip.custom:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(255,255,255,0.25) inset; }
 /* Remove outline from Custom amount button while keeping an accessible focus style */
 .donate-chip.custom { outline: none; }
 .donate-chip.custom:focus { outline: none; box-shadow: 0 0 0 2px rgba(255,255,255,0.25) inset; }
+/* Deep selectors in case the chip is rendered in a child component */
+:deep(.donate-chip.custom),
+:deep(button.donate-chip.custom),
+:deep(.donate-chip.custom button),
+:deep(.donate-row .custom) {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent;
+  border: none !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
 
 /* Extra padding at bottom so last comment isn't too tight against footer */
 .comments-list { padding-bottom: 120px; }
