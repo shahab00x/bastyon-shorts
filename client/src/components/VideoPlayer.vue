@@ -459,6 +459,7 @@ export default defineComponent({
       this.$nextTick(() => {
         this.ensureOnlyActivePlaying();
         this.setupHlsForIndex(this.currentIndex);
+        this.updateVideoFitForIndex(this.currentIndex);
       });
     }
   },
@@ -714,6 +715,78 @@ export default defineComponent({
           } catch (_) {}
         }
       });
+    },
+    // Compute per-video fit: choose 'cover' when cropping keeps >=75% visible, else 'contain'
+    updateVideoFitForIndex(index, el) {
+      try {
+        const videoEl = el || this.$refs.videoElements?.[index] || this.$refs.videoElements;
+        if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) return;
+        const vw = Number(videoEl.videoWidth);
+        const vh = Number(videoEl.videoHeight);
+        if (!vw || !vh) return;
+        // Use container dimensions (full-screen slide)
+        let cw = window.innerWidth || 0;
+        let ch = window.innerHeight || 0;
+        try {
+          const container = this.$el?.querySelector?.('.video-slide.active') || this.$el;
+          const rect = container?.getBoundingClientRect?.();
+          if (rect && rect.width && rect.height) { cw = rect.width; ch = rect.height; }
+        } catch (_) {}
+        if (!cw || !ch) return;
+        const Av = vw / vh; // video aspect
+        const Ac = cw / ch; // container aspect
+        const visibleFractionCover = Math.min(Av, Ac) / Math.max(Av, Ac); // fraction visible when using cover
+        // If cover would hide more than 25%, switch to contain
+        this.$set ? this.$set(this.videoFit, index, (visibleFractionCover >= 0.75 ? 'cover' : 'contain'))
+                  : (this.videoFit[index] = (visibleFractionCover >= 0.75 ? 'cover' : 'contain'));
+      } catch (_) {}
+    },
+    // Metadata loaded: set duration and compute best fit mode
+    onLoadedMetadata(index) {
+      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+      if (videoEl) {
+        try {
+          const dur = Number(videoEl.duration);
+          if (Number.isFinite(dur) && dur > 0) this.durations[index] = dur;
+        } catch (_) {}
+        this.updateVideoFitForIndex(index, videoEl);
+      }
+    },
+    // Loaded data/canplay/play/pause handlers to manage UI state safely
+    onVideoLoaded(index) {
+      if (this.bufferingIndex === index) this.bufferingIndex = null;
+    },
+    onVideoCanPlay(index) {
+      if (this.bufferingIndex === index) this.bufferingIndex = null;
+    },
+    onVideoPlay(index) {
+      this.isVideoPlaying = true;
+      if (this.pausedOverlayIndex === index) this.pausedOverlayIndex = null;
+    },
+    onVideoPause(index) {
+      this.isVideoPlaying = false;
+      if (this.currentIndex === index) this.pausedOverlayIndex = index;
+    },
+    // Ensure only the active slide's video is playing
+    ensureOnlyActivePlaying() {
+      try {
+        const refs = this.$refs.videoElements;
+        const list = Array.isArray(refs) ? refs : (refs ? [refs] : []);
+        list.forEach((el, i) => {
+          if (!el) return;
+          try {
+            if (i === this.currentIndex) {
+              if (this.settings?.autoplay && el.paused) el.play().catch(() => {});
+            } else {
+              if (!el.paused) el.pause();
+            }
+          } catch (_) {}
+        });
+      } catch (_) {}
+    },
+    // Recompute fit on viewport resize
+    onWindowResize() {
+      this.updateVideoFitForIndex(this.currentIndex);
     },
     // Ensure refs are captured safely
     cacheVideoElements() {
@@ -1604,7 +1677,15 @@ export default defineComponent({
     this.$nextTick(() => {
       this.setupHlsForIndex(this.currentIndex);
       this.ensureOnlyActivePlaying();
+      // Compute initial fit for current video
+      this.updateVideoFitForIndex(this.currentIndex);
     });
+    // Listen to resize to recompute fit
+    try {
+      (this).___boundResize = () => this.onWindowResize();
+      window.addEventListener('resize', (this).___boundResize, { passive: true });
+      window.addEventListener('orientationchange', (this).___boundResize, { passive: true });
+    } catch (_) {}
   },
   beforeUnmount() {
     // Cleanup any HLS instances
@@ -1618,6 +1699,13 @@ export default defineComponent({
       }
     }
     this.videoCache.clear();
+    // Remove listeners
+    try {
+      if ((this).___boundResize) {
+        window.removeEventListener('resize', (this).___boundResize);
+        window.removeEventListener('orientationchange', (this).___boundResize);
+      }
+    } catch (_) {}
   }
 });
 
@@ -2087,6 +2175,9 @@ export default defineComponent({
 }
 .donate-chip.active { background: rgba(255, 215, 0, 0.15); border-color: #FFD700; }
 .donate-chip.custom { border-style: dashed; }
+/* Remove outline from Custom amount button while keeping an accessible focus style */
+.donate-chip.custom { outline: none; }
+.donate-chip.custom:focus { outline: none; box-shadow: 0 0 0 2px rgba(255,255,255,0.25) inset; }
 
 /* Extra padding at bottom so last comment isn't too tight against footer */
 .comments-list { padding-bottom: 120px; }
