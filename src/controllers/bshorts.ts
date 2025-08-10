@@ -761,6 +761,7 @@ export async function getComments(req: Request, res: Response): Promise<void> {
     const limit = Number.parseInt(String(req.query.limit ?? '50'), 10) || 50
     const offset = Number.parseInt(String(req.query.offset ?? '0'), 10) || 0
     const includeProfiles = String(req.query.includeProfiles ?? '').toLowerCase() === '1' || String(req.query.includeProfiles ?? '').toLowerCase() === 'true'
+    const debug = String(req.query.debug ?? '').toLowerCase() === '1' || String(req.query.debug ?? '').toLowerCase() === 'true'
 
     if (!hash) {
       res.status(400).json({ message: 'Missing required query parameter: hash' })
@@ -770,9 +771,53 @@ export async function getComments(req: Request, res: Response): Promise<void> {
     const pocketNetProxyInstance = await getPocketNetProxyInstance()
     const rpcAny = pocketNetProxyInstance.rpc as any
 
-    const resp: any = await rpcAny.getcomments({ hash, limit, offset })
-    const rawComments: any[] = Array.isArray(resp) ? resp : (resp?.comments || resp?.data?.comments || [])
-    const totalCount = (resp && (resp.commentscount ?? resp.count ?? rawComments.length)) || rawComments.length
+    // Some nodes expect string values or different param keys; try a few shapes
+    let resp: any = null
+    const attempts = [
+      () => rpcAny.getcomments({ hash: String(hash), limit: String(limit), offset: String(offset) }),
+      () => rpcAny.getcomments({ hash: String(hash), count: String(limit), offset: String(offset) }),
+      () => rpcAny.getcomments({ posttxid: String(hash), limit: String(limit), offset: String(offset) }),
+      () => rpcAny.getcomments({ postid: String(hash), count: String(limit), offset: String(offset) }),
+    ]
+    for (const tryCall of attempts) {
+      try {
+        resp = await tryCall()
+        if (resp) break
+      } catch (e) {
+        // continue to next attempt
+      }
+    }
+
+    // If RPC still fails, or returns an explicit error, respond gracefully with empty list
+    if (!resp || (resp && typeof resp === 'object' && 'error' in resp && (resp as any).error)) {
+      const empty = { hash, limit, offset, count: 0, comments: [] as any[] }
+      if (debug) (empty as any).debugRaw = resp
+      if (debug) console.info('getcomments empty/err. typeof resp:', typeof resp, 'keys:', resp && typeof resp === 'object' ? Object.keys(resp) : undefined)
+      res.status(200).json(empty)
+      return
+    }
+
+    // Support multiple possible shapes of the RPC response
+    const rawComments: any[] = Array.isArray(resp)
+      ? resp
+      : (
+        resp?.comments
+        || resp?.data?.comments
+        || (Array.isArray(resp?.data) ? resp.data : undefined)
+        || resp?.result?.comments
+        || resp?.result?.data?.comments
+        || (Array.isArray(resp?.result?.data) ? resp.result.data : undefined)
+        || []
+      )
+    const totalCount = (
+      resp && (
+        resp.commentscount
+        ?? resp.count
+        ?? resp?.result?.commentscount
+        ?? resp?.result?.count
+        ?? (Array.isArray(rawComments) ? rawComments.length : 0)
+      )
+    ) || (Array.isArray(rawComments) ? rawComments.length : 0)
 
     function extractText(msg: any): string {
       try {
@@ -780,12 +825,12 @@ export async function getComments(req: Request, res: Response): Promise<void> {
           const s = msg.trim()
           if (s.startsWith('{') && s.endsWith('}')) {
             const j = JSON.parse(s)
-            return String(j?.message ?? j?.msg ?? '')
+            return String(j?.message ?? j?.msg ?? j?.comment ?? j?.body ?? '')
           }
           return s
         }
         if (msg && typeof msg === 'object') {
-          return String(msg.message ?? msg.msg ?? '')
+          return String(msg.message ?? msg.msg ?? msg.comment ?? msg.body ?? '')
         }
       } catch {}
       return ''
@@ -794,10 +839,10 @@ export async function getComments(req: Request, res: Response): Promise<void> {
     const comments = rawComments.map((c: any) => {
       const addr = c?.address || c?.useraddress || c?.user || undefined
       return {
-        id: c?.id || c?.hash || undefined,
+        id: c?.id || c?.hash || c?.commentid || c?.txid || undefined,
         address: addr,
         user: typeof addr === 'string' ? `${addr.substring(0, 6)}…${addr.substring(addr.length - 4)}` : (c?.user || 'Anonymous'),
-        text: extractText(c?.msg),
+        text: extractText(c?.msg ?? c?.message ?? c?.comment ?? c?.body),
         timestamp: c?.time ? new Date(c.time * 1000).toISOString() : undefined,
         raw: c,
       }
@@ -809,6 +854,19 @@ export async function getComments(req: Request, res: Response): Promise<void> {
       offset,
       count: Number.isFinite(totalCount) ? Number(totalCount) : comments.length,
       comments,
+    }
+
+    if (debug) {
+      result.debugRaw = resp
+      try {
+        console.info('getcomments resp keys:', resp && typeof resp === 'object' ? Object.keys(resp) : typeof resp)
+        if (resp?.result && typeof resp.result === 'object') {
+          console.info('getcomments resp.result keys:', Object.keys(resp.result))
+        }
+        if (resp?.data && typeof resp.data === 'object' && !Array.isArray(resp.data)) {
+          console.info('getcomments resp.data keys:', Object.keys(resp.data))
+        }
+      } catch {}
     }
 
     if (includeProfiles) {

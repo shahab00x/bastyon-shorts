@@ -168,8 +168,8 @@
         <h3>Comments</h3>
         <div class="comments-list">
           <div 
-            v-for="comment in currentVideo?.commentData" 
-            :key="comment.id" 
+            v-for="(comment, cIdx) in currentVideo?.commentData" 
+            :key="comment.id || comment.hash || cIdx" 
             class="comment"
           >
             <p><strong>{{ comment.user }}:</strong> {{ comment.text }}</p>
@@ -448,7 +448,9 @@ export default defineComponent({
         const v = this.currentVideo
         if (!v || !this.newComment.trim()) return
         const userAddress = 'user_address_placeholder'
-        await bastyonApi.postComment(v.hash || v.id, this.newComment.trim(), userAddress)
+        const videoId = v.hash || v.id || v.txid
+        if (!videoId) return
+        await bastyonApi.postComment(videoId, this.newComment.trim(), userAddress)
         // Optimistically append
         const newItem = {
           id: `local-${Date.now()}`,
@@ -457,6 +459,7 @@ export default defineComponent({
           timestamp: new Date().toISOString()
         }
         v.commentData = Array.isArray(v.commentData) ? [...v.commentData, newItem] : [newItem]
+        if (typeof v.comments === 'number') v.comments += 1
         this.newComment = ''
       } catch (e) {
         console.warn('Failed to post comment:', e)
@@ -968,16 +971,21 @@ export default defineComponent({
     async loadCommentsForCurrent() {
       try {
         const v = this.currentVideo
-        if (!v || !v.hash) return
-        const result = await bastyonApi.fetchComments(v.hash, { limit: 50, includeProfiles: true })
+        if (!v) return
+        const videoId = v.hash || v.id || v.txid
+        if (!videoId) return
+        const result = await bastyonApi.fetchComments(videoId, { limit: 50, includeProfiles: true })
         const profiles = result?.profiles || {}
-        const mapped = (result?.comments || []).map(c => {
+        const mapped = (result?.comments || []).map((c, i) => {
           const prof = c.address ? profiles[c.address] : null
+          const displayUser = prof?.name || c.user || (c.address ? (c.address.substring(0, 6) + '…' + c.address.substring(c.address.length - 4)) : 'Anonymous')
           return {
-            ...c,
-            user: prof?.name || c.user,
+            id: c.id || c.hash || `c-${i}-${Date.now()}`,
+            user: displayUser,
+            text: c.text || c.msg || '',
             avatar: prof?.avatar,
-            reputation: prof?.reputation
+            reputation: prof?.reputation,
+            timestamp: c.timestamp
           }
         })
         this.$set ? this.$set(v, 'commentData', mapped) : (v.commentData = mapped)
@@ -1117,7 +1125,7 @@ export default defineComponent({
         ? `${description.substring(0, 100)}...`
         : description;
     },
-    async addComment() {
+    async addCommentLegacy() {
       if (this.newComment.trim() && this.currentVideo) {
         // In a real implementation, this would come from Bastyon SDK
         const userAddress = 'user_address_placeholder';
@@ -1168,7 +1176,7 @@ export default defineComponent({
         }
       }
     },
-    async donateToCreator() {
+    async donateToCreatorLegacy() {
       if (this.currentVideo) {
         // In a real implementation, this would come from Bastyon SDK
         const userAddress = 'user_address_placeholder';

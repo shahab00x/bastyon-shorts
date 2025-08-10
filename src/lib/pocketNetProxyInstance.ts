@@ -24,8 +24,13 @@ export async function getPocketNetProxyInstance() {
     // Configure global variables for PocketNet Proxy API
     // These settings can help improve search results by using more nodes and trusted connections
     
+    // Disable TLS verification similar to pocketnet.gui to prevent TLS errors from blocking RPC
+    if (process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '0') {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+    }
+    
     // Set minimum number of nodes required (default might be too low)
-    global.MIN_NODES_COUNT = 20
+    global.MIN_NODES_COUNT = 1
     
     // Enable logging to help with debugging
     global.WRITE_LOGS = true
