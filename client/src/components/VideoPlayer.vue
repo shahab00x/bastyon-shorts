@@ -2305,6 +2305,13 @@ export default defineComponent({
   touch-action: none; /* prevent scroll-before-close when swiping from header */
 }
 
+/* Make the comments drawer header fully opaque to avoid content showing through while scrolling */
+.comments-drawer .drawer-header {
+  background: rgba(0,0,0,1);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 /* Comments list states */
 .comments-loading { display: flex; align-items: center; justify-content: center; padding: 16px 0; }
 .comments-loading.more { padding: 10px 0 18px; }
