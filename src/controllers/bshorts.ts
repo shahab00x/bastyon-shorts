@@ -246,7 +246,7 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
             () => rpcAny.getuserprofile({ address: addr, shortForm: 'basic' }),
             () => rpcAny.getuserprofile({ address: addr, shortForm: 'yes' }),
             () => rpcAny.getuserprofile({ address: addr }),
-            () => pocketNetProxyInstance.rpc.getuserprofile({ addresses: [addr] } as any),
+            () => rpcAny.getuserprofile({ addresses: [addr] }),
           ]
           if (debugProfiles) attemptLog[addr] = []
           for (const attempt of attempts) {
@@ -314,8 +314,12 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
       const subset = videos.slice(0, Math.min(10, videos.length))
       await Promise.all(subset.map(async v => {
         try {
-          const resp: any = await (pocketNetProxyInstance.rpc as any).getcomments({ hash: v.hash, limit: 50, offset: 0 })
+          // Use positional params like pocketnet.gui: ['', '', userAddressOrEmpty, [postTxid]]
+          console.log('getcomments request params:', ['', '', '', [String(v.hash)]]);
+          const resp: any = await (pocketNetProxyInstance.rpc as any).getcomments(['', '', '', [String(v.hash)]])
+          console.log('getcomments response:', JSON.stringify(resp, null, 2));
           const rawComments: any[] = Array.isArray(resp) ? resp : (resp?.comments || resp?.data?.comments || [])
+          console.log('rawComments extracted:', rawComments);
           const comments = rawComments.slice(0, 5).map(c => ({
             id: c?.id || c?.hash || String(Math.random()),
             user: c?.address?.substring(0, 8) || c?.user || 'Anonymous',
@@ -684,7 +688,7 @@ export async function getUserProfile(req: Request, res: Response): Promise<void>
         () => rpcAny.getuserprofile({ address: addr, shortForm: 'basic' }),
         () => rpcAny.getuserprofile({ address: addr, shortForm: 'yes' }),
         () => rpcAny.getuserprofile({ address: addr }),
-        () => rpcAny.getuserprofile({ addresses: [addr] }),
+        () => pocketNetProxyInstance.rpc.getuserprofile({ addresses: [addr] } as any),
       ]
       for (const attempt of attempts) {
         try {
@@ -771,19 +775,44 @@ export async function getComments(req: Request, res: Response): Promise<void> {
     const pocketNetProxyInstance = await getPocketNetProxyInstance()
     const rpcAny = pocketNetProxyInstance.rpc as any
 
-    // Some nodes expect string values or different param keys; try a few shapes
+    // Some nodes expect positional array params; prefer GUI format and keep object fallbacks
     let resp: any = null
     const attempts = [
-      () => rpcAny.getcomments({ hash: String(hash), limit: String(limit), offset: String(offset) }),
-      () => rpcAny.getcomments({ hash: String(hash), count: String(limit), offset: String(offset) }),
-      () => rpcAny.getcomments({ posttxid: String(hash), limit: String(limit), offset: String(offset) }),
-      () => rpcAny.getcomments({ postid: String(hash), count: String(limit), offset: String(offset) }),
+      // GUI-style positional params: ['', '', currentUserAddressOrEmpty, [postTxid]]
+      () => {
+        console.log('getcomments attempt 1 params:', [String(hash)]);
+        return rpcAny.getcomments([String(hash)])
+      },
+      // Minimal positional fallback: [postTxid]
+      () => {
+        console.log('getcomments attempt 2 params:', [String(hash)]);
+        return rpcAny.getcomments([String(hash), "", ""])
+      },
+      // Object-shaped fallbacks (older proxies / variants)
+      () => {
+        console.log('getcomments attempt 3 params:', { hash: String(hash), limit: String(limit), offset: String(offset) });
+        return rpcAny.getcomments({ hash: String(hash), limit: String(limit), offset: String(offset) })
+      },
+      () => {
+        console.log('getcomments attempt 4 params:', { hash: String(hash), count: String(limit), offset: String(offset) });
+        return rpcAny.getcomments({ hash: String(hash), count: String(limit), offset: String(offset) })
+      },
+      () => {
+        console.log('getcomments attempt 5 params:', { posttxid: String(hash), limit: String(limit), offset: String(offset) });
+        return rpcAny.getcomments({ posttxid: String(hash), limit: String(limit), offset: String(offset) })
+      },
+      () => {
+        console.log('getcomments attempt 6 params:', { postid: String(hash), count: String(limit), offset: String(offset) });
+        return rpcAny.getcomments({ postid: String(hash), count: String(limit), offset: String(offset) })
+      },
     ]
     for (const tryCall of attempts) {
       try {
         resp = await tryCall()
+        console.log('getcomments response:', JSON.stringify(resp, null, 2));
         if (resp) break
       } catch (e) {
+        console.log('getcomments attempt failed:', e);
         // continue to next attempt
       }
     }
