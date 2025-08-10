@@ -30,7 +30,7 @@
         :class="{ 'active': currentIndex === index, 'above': index < currentIndex, 'below': index > currentIndex }"
       >
         <!-- Top-right settings button -->
-        <button class="settings-top-right" @click.stop="toggleSettingsMenu" aria-label="Settings">⚙</button>
+        <button class="settings-top-right" @click.stop="openSettingsPage" aria-label="Settings">⚙</button>
         <video 
           ref="videoElements"
           :src="currentIndex === index ? resolvedSrc(index, video) : ''" 
@@ -319,62 +319,26 @@
       </div>
     </div>
     
-    <!-- Settings Menu -->
-    <div 
-      v-if="showSettingsMenu" 
-      class="settings-menu"
-    >
-      <div class="settings-content">
+    <!-- Settings Page (full-screen) -->
+    <div v-if="showSettingsMenu" class="settings-page" @click.self="closeSettingsPage">
+      <div class="settings-content" @click.stop>
         <h3>Settings</h3>
         <div class="settings-option">
           <label for="autoplay">Autoplay Videos</label>
-          <input 
-            type="checkbox" 
-            id="autoplay" 
-            v-model="settings.autoplay"
-            @change="saveSettings"
-          >
+          <input type="checkbox" id="autoplay" v-model="settings.autoplay" @change="saveSettings">
         </div>
         <div class="settings-option">
           <label for="darkMode">Dark Mode</label>
-          <input 
-            type="checkbox" 
-            id="darkMode" 
-            v-model="settings.darkMode"
-            @change="saveSettings"
-          >
+          <input type="checkbox" id="darkMode" v-model="settings.darkMode" @change="saveSettings">
         </div>
         <div class="settings-option">
           <label for="notifications">Enable Notifications</label>
-          <input 
-            type="checkbox" 
-            id="notifications" 
-            v-model="settings.notifications"
-            @change="saveSettings"
-          >
+          <input type="checkbox" id="notifications" v-model="settings.notifications" @change="saveSettings">
         </div>
-        <button @click="toggleSettingsMenu" class="close-btn">Close</button>
+        <button @click="closeSettingsPage" class="close-btn">Close</button>
       </div>
     </div>
     
-    <!-- Camera Interface -->
-    <div 
-      v-if="showCameraInterface" 
-      class="camera-interface"
-    >
-      <div class="camera-content">
-        <h3>Record a Bastyon Short</h3>
-        <div class="camera-preview">
-          <div class="camera-placeholder">
-            Camera preview would appear here
-          </div>
-        </div>
-        <div class="camera-controls">
-          <button @click="closeCameraInterface" class="cancel-btn">Cancel</button>
-          <button @click="recordVideo" class="record-btn">Record</button>
-          <button @click="uploadVideo" class="upload-btn">Upload</button>
-        </div>
-      </div>
     <!-- Download Options Modal -->
     <div 
       v-if="showDownloadModal" 
@@ -398,7 +362,6 @@
       </div>
     </div>
     
-    </div>
   </div>
 </template>
 
@@ -436,7 +399,6 @@ export default defineComponent({
       mouseStartX: 0,
       mouseStartTime: 0,
       isVideoPlaying: false,
-      showCameraInterface: false,
       videoCache: new Map(), // Cache for loaded videos
       maxCacheSize: 5, // Maximum number of videos to cache
       settings: {
@@ -1216,11 +1178,10 @@ export default defineComponent({
             this.prevVideo();
           }
         }
-        // Horizontal swipe for camera interface
+        // Horizontal swipe: right swipe opens settings
         else {
-          // Swipe left to open camera
-          if (diffX > 50) {
-            this.openCameraInterface();
+          if (diffX < -50) {
+            this.openSettingsPage();
           }
         }
       }
@@ -1343,33 +1304,11 @@ export default defineComponent({
       this.preloadVideo(this.currentIndex - 1);
       this.preloadVideo(this.currentIndex + 1);
     },
-    openCameraInterface() {
-      // Open the camera interface
-      this.showCameraInterface = true;
+    openSettingsPage() {
+      this.showSettingsMenu = true;
     },
-    closeCameraInterface() {
-      // Close the camera interface
-      this.showCameraInterface = false;
-    },
-    recordVideo() {
-      // In a real implementation, this would start recording
-      alert('Recording would start now');
-    },
-    async uploadVideo() {
-      // In a real implementation, this would upload the recorded video
-      try {
-        const result = await bastyonApi.uploadVideo();
-        
-        if (result.success) {
-          alert('Video uploaded successfully!');
-          this.closeCameraInterface();
-          // Refresh the playlist to include the new video
-          this.fetchVideos();
-        }
-      } catch (error) {
-        console.error('Error uploading video:', error);
-        alert('Video upload failed. Please try again.');
-      }
+    closeSettingsPage() {
+      this.showSettingsMenu = false;
     },
     toggleDescriptionDrawer() {
       this.showDescriptionDrawer = !this.showDescriptionDrawer;
@@ -1494,7 +1433,7 @@ export default defineComponent({
         if (Math.abs(diffY) > Math.abs(diffX)) {
           if (diffY > 0) this.nextVideo(); else this.prevVideo();
         } else {
-          if (diffX > 0) this.openCameraInterface(); else this.closeCameraInterface();
+          if (diffX < 0) this.openSettingsPage();
         }
       }
       this.mouseDown = false;
@@ -1638,6 +1577,19 @@ export default defineComponent({
         localStorage.setItem('bastyonShortsSettings', JSON.stringify(this.settings));
       } catch (error) {
         console.error('Error saving settings:', error);
+      }
+    },
+    loadSettings() {
+      try {
+        const raw = localStorage.getItem('bastyonShortsSettings');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            this.settings = { ...this.settings, ...parsed };
+          }
+        }
+      } catch (error) {
+        console.error('Error loading settings:', error);
       }
     },
     async rateVideo(rating, videoIndex) {
@@ -1836,6 +1788,7 @@ export default defineComponent({
     },
   },
   mounted() {
+    this.loadSettings();
     this.fetchVideos();
     // Ensure first video initializes HLS if available
     this.$nextTick(() => {
@@ -2153,6 +2106,40 @@ export default defineComponent({
   border: none;
   border-radius: 16px;
   padding: 6px 10px;
+}
+
+.settings-page {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.9);
+  z-index: 1600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-content {
+  width: 100%;
+  max-width: 640px;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  background: #111;
+  color: #fff;
+  padding: 20px;
+  box-sizing: border-box;
+}
+.settings-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0;
+}
+.close-btn {
+  background: #5ac8fa;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
 }
 
 /* Compact star rating */
