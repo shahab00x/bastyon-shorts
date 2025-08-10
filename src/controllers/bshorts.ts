@@ -125,8 +125,15 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
     let items: any[] = []
     try {
       const response = await axios.get(url, { timeout: 10000 })
-      const payload = response.data || {}
-      items = Array.isArray(payload.items) ? payload.items : []
+      const data = response.data
+      if (Array.isArray(data)) {
+        items = data
+      } else if (Array.isArray(data?.items)) {
+        items = data.items
+      } else {
+        console.warn('Upstream playlists API returned unexpected shape for /bshorts:', typeof data, data && Object.keys(data))
+        items = []
+      }
       console.log(`Received ${items.length} playlist items`)
     } catch (e:any) {
       console.warn('Upstream playlists API failed, responding with empty list:', e?.message || e)

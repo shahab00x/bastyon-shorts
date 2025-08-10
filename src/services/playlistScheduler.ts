@@ -66,7 +66,16 @@ async function fetchPlaylistItemsForLang(lang: LangCode, minCount = 100) {
     const url = `${base}/playlists/${encodeURIComponent(lang)}?limit=${pageSize}&offset=${offset}`
     try {
       const response = await axios.get(url, { timeout: 15000 })
-      const items = Array.isArray(response.data?.items) ? response.data.items : []
+      const data = response.data
+      let items: any[] = []
+      if (Array.isArray(data)) {
+        items = data
+      } else if (Array.isArray(data?.items)) {
+        items = data.items
+      } else {
+        console.warn(`[playlistScheduler] Unexpected upstream shape for ${lang} page @ offset ${offset}:`, typeof data, data && Object.keys(data))
+        items = []
+      }
       if (!items.length) break
       acc.push(...items)
       if (acc.length >= minCount) break
