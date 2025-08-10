@@ -170,6 +170,10 @@
       <div class="drawer-content" @click.stop>
         <div class="drawer-header"><h3>Video Description</h3></div>
         <p>{{ currentVideo?.description }}</p>
+        <!-- Hashtags only when drawer is open -->
+        <div v-if="showDescriptionDrawer && descriptionTags.length" class="hashtags-row">
+          <span v-for="(tag, i) in descriptionTags" :key="i" class="hashtag">{{ tag }}</span>
+        </div>
       </div>
     </div>
     
@@ -475,6 +479,33 @@ export default defineComponent({
   computed: {
     currentVideo() {
       return this.playlist[this.currentIndex]
+    },
+    descriptionTags(): string[] {
+      const out: string[] = []
+      const seen = new Set<string>()
+      // Include tags from the playlist API under `tags`
+      const apiTags = (this.currentVideo && (this.currentVideo as any).tags) || []
+      if (Array.isArray(apiTags)) {
+        for (const t of apiTags) {
+          if (t == null) continue
+          let s = String(t).trim()
+          if (!s) continue
+          // ensure leading '#'
+          if (!s.startsWith('#')) s = '#' + s.replace(/^#+/, '')
+          if (!seen.has(s)) { seen.add(s); out.push(s) }
+        }
+      }
+      // Also extract hashtags from description text
+      const desc = (this.currentVideo && (this.currentVideo as any).description) || ''
+      if (desc && typeof desc === 'string') {
+        const re = /(^|\s)(#[\w-]+)/g
+        let m: RegExpExecArray | null
+        while ((m = re.exec(desc)) !== null) {
+          const tag = m[2]
+          if (tag && !seen.has(tag)) { seen.add(tag); out.push(tag) }
+        }
+      }
+      return out
     }
   },
   watch: {
@@ -2230,7 +2261,7 @@ export default defineComponent({
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(0,0,0,0.55);
+  background: rgba(0,0,0,0.72);
   backdrop-filter: saturate(120%) blur(10px);
   -webkit-backdrop-filter: saturate(120%) blur(10px);
   padding: 0 20px 0;
@@ -2247,11 +2278,17 @@ export default defineComponent({
 
 .comments-drawer .drawer-content {
   max-height: 66%;
+  background: rgba(0,0,0,0.80); /* darker glass for comments */
 }
 
 .drawer-content h3 {
   margin-top: 0;
   color: var(--text-primary);
+}
+
+/* Make description drawer come higher for easier interaction */
+.description-drawer .drawer-content {
+  max-height: 88%;
 }
 
 /* Sticky header for drawers (e.g., Comments) */
@@ -2272,6 +2309,23 @@ export default defineComponent({
 .comments-loading { display: flex; align-items: center; justify-content: center; padding: 16px 0; }
 .comments-loading.more { padding: 10px 0 18px; }
 .no-comments { text-align: center; color: rgba(255,255,255,0.7); padding: 16px 0; }
+
+/* Hashtags row in description drawer */
+.hashtags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+.hashtag {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #e8f0ff;
+  font-size: 12px;
+}
 .drawer-header h3 { margin: 0; }
 
 /* Sticky footer inside drawer content */
