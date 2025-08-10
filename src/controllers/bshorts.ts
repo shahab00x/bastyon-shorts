@@ -1,3 +1,42 @@
+// Try to extract a display name from various possible fields
+function extractDisplayName(p: any): string | undefined {
+  if (!p || typeof p !== 'object') return undefined
+  return (
+    p.name || p.nickname || p.nick || p.displayName || p.display_name ||
+    p.profileName || p.username || undefined
+  )
+}
+
+// Try to extract an avatar URL string from various fields (supports absolute URL or data URI)
+function extractAvatarUrl(p: any): string | undefined {
+  if (!p || typeof p !== 'object') return undefined
+  const candidates = [
+    p.avatar, p.i, p.image, p.icon, p.photo, p.picture,
+    p?.profile?.avatar, p?.profile?.image,
+  ].filter(Boolean)
+  for (const c of candidates) {
+    if (typeof c === 'string') return normalizeAvatarUrl(c)
+    if (c && typeof c === 'object') {
+      for (const key of ['url', 'src', 'original', 'large', 'small']) {
+        const v = c[key]
+        if (typeof v === 'string') return normalizeAvatarUrl(v)
+      }
+    }
+  }
+  return undefined
+}
+
+function normalizeAvatarUrl(url: string): string {
+  try {
+    if (!url) return url
+    if (url.startsWith('data:')) return url
+    if (url.startsWith('http://') || url.startsWith('https://')) return url
+    if (url.startsWith('/')) return `https://bastyon.com${url}`
+    return url
+  } catch {
+    return url
+  }
+}
 import type { Request, Response } from 'express'
 import axios from 'axios'
 import { getPocketNetProxyInstance } from '../lib'
@@ -38,6 +77,18 @@ function convertPeerTubeUrlToDirect(url: string): string {
   return url
 }
 
+// Parse peertube://host/uuid and return { host, id } if possible
+function parsePeerTubeUrl(url: string): { host: string, id: string } | null {
+  try {
+    if (!url || !url.startsWith('peertube://')) return null
+    const parts = url.substring(11).split('/')
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      return { host: parts[0], id: parts[1] }
+    }
+  } catch {}
+  return null
+}
+
 /**
  * GET /api/videos/bshorts
  *
@@ -66,15 +117,21 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
     const lang = typeof req.query.lang === 'string' ? req.query.lang : 'en'
     const limit = Number.parseInt(String(req.query.limit ?? '20'), 10) || 20
     const offset = Number.parseInt(String(req.query.offset ?? '0'), 10) || 0
+    const debugProfiles = String(req.query.debugProfiles ?? '').toLowerCase() === '1' || String(req.query.debugProfiles ?? '').toLowerCase() === 'true'
     const base = process.env.PLAYLISTS_API_BASE || 'http://localhost:4040'
     const url = `${base}/playlists/${encodeURIComponent(lang)}?limit=${limit}&offset=${offset}`
 
     console.log(`Fetching playlists from ${url}`)
-    const response = await axios.get(url, { timeout: 10000 })
-    const payload = response.data || {}
-
-    const items: any[] = Array.isArray(payload.items) ? payload.items : []
-    console.log(`Received ${items.length} playlist items`)
+    let items: any[] = []
+    try {
+      const response = await axios.get(url, { timeout: 10000 })
+      const payload = response.data || {}
+      items = Array.isArray(payload.items) ? payload.items : []
+      console.log(`Received ${items.length} playlist items`)
+    } catch (e:any) {
+      console.warn('Upstream playlists API failed, responding with empty list:', e?.message || e)
+      items = []
+    }
 
     let videos = items.map((item: any) => {
       const duration = Number(item?.peertube?.durationSeconds ?? 0) || 0
@@ -99,13 +156,14 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
       const averageRatingRaw = ratingsCount > 0 ? score / ratingsCount : 1
       const averageRating = Math.max(1, Math.min(5, averageRatingRaw))
 
+      const author = item?.author || {}
       return {
         id: item.video_hash,
         hash: item.video_hash,
         txid: item.video_hash,
         url: item.video_url, // keep peertube:// URL; client converts to direct MP4
         resolutions: [] as any[],
-        uploader: item?.author?.address || item.author_address || 'Unknown',
+        uploader: author?.name || author?.nickname || author?.nick || item?.author?.address || item.author_address || 'Unknown',
         uploaderAddress: item.author_address,
         description: item.caption || item.description || '',
         duration,
@@ -126,6 +184,9 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         rawPost: item,
         // Optional extra fields
         bastyonPostLink: item.bastyon_post_link,
+        uploaderAvatar: author?.avatar ? normalizeAvatarUrl(author.avatar) : undefined,
+        uploaderReputation: typeof author?.reputation === 'number' ? author.reputation : (typeof author?.rep === 'number' ? author.rep : undefined),
+        views: undefined as number | undefined,
       }
     })
 
@@ -137,19 +198,33 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
 
       // Fetch profiles one-by-one to be safe with RPC shape
       const profileMap = new Map<string, any>()
+      // For debugProfiles, store per-address attempt info
+      const attemptLog: Record<string, any[]> = {}
       for (const addr of uniqueAddresses) {
         try {
-          // Prefer address + shortForm per user's example
+          // Try several shapes to maximize compatibility across proxy versions
           let prof: any = null
-          try {
-            // Cast to any to allow { address, shortForm } shape without TS error
-            prof = await (pocketNetProxyInstance.rpc as any).getuserprofile({ address: addr, shortForm: 'yes' })
-          } catch (e1) {
-            // Fallback to addresses array shape
-            const resp = await pocketNetProxyInstance.rpc.getuserprofile({ addresses: [addr] } as any)
-            prof = Array.isArray(resp) ? resp[0] : resp
+          const rpcAny = pocketNetProxyInstance.rpc as any
+          const attempts = [
+            () => rpcAny.getuserprofile({ address: addr, shortForm: 'basic' }),
+            () => rpcAny.getuserprofile({ address: addr, shortForm: 'yes' }),
+            () => rpcAny.getuserprofile({ address: addr }),
+            () => pocketNetProxyInstance.rpc.getuserprofile({ addresses: [addr] } as any),
+          ]
+          if (debugProfiles) attemptLog[addr] = []
+          for (const attempt of attempts) {
+            try {
+              const resp = await attempt()
+              prof = Array.isArray(resp) ? resp[0] : resp
+              if (debugProfiles) attemptLog[addr].push({ ok: true, keys: prof ? Object.keys(prof) : [], note: Array.isArray(resp) ? 'array-first' : 'object' })
+              if (prof) break
+            } catch (err:any) {
+              if (debugProfiles) attemptLog[addr].push({ ok: false, error: err?.message || String(err) })
+            }
           }
+          console.log("getuserprofile attempts: " , attempts.toString())
           if (prof) profileMap.set(addr, prof)
+          else console.warn('Profile not found via RPC for address', addr)
         } catch (e) {
           console.warn(`getuserprofile failed for ${addr}:`, e instanceof Error ? e.message : e)
         }
@@ -158,11 +233,36 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
       videos = videos.map(v => {
         const prof = profileMap.get(v.uploaderAddress)
         if (prof) {
-          return {
-            ...v,
-            uploader: prof?.name || prof?.nick || v.uploader,
-            uploaderReputation: prof?.reputation ?? prof?.rep ?? undefined,
-            uploaderAvatar: prof?.avatar || prof?.i || undefined,
+          const avatar = extractAvatarUrl(prof)
+          const enriched: any = { ...v }
+          if (!enriched.uploader || enriched.uploader === v.uploaderAddress || enriched.uploader === 'Unknown') {
+            const name = extractDisplayName(prof)
+            if (name) enriched.uploader = name
+          }
+          if (enriched.uploaderReputation == null) {
+            const rep = prof?.reputation ?? prof?.rep
+            if (typeof rep === 'number') enriched.uploaderReputation = rep
+          }
+          if (!enriched.uploaderAvatar && avatar) {
+            enriched.uploaderAvatar = avatar
+          }
+          if (debugProfiles) {
+            enriched.debugProfileRaw = prof
+            enriched.debugProfileSourceAddress = v.uploaderAddress
+            enriched.profileDebugAttempts = attemptLog[v.uploaderAddress] || []
+          }
+          return enriched
+        }
+        console.warn('No profile found for address', v.uploaderAddress)
+        return v
+      })
+
+      // Fallback: if no profile reputation, try playlist rawPost.author.reputation
+      videos = videos.map(v => {
+        if ((v as any).uploaderReputation == null) {
+          const rep = (v as any)?.rawPost?.author?.reputation
+          if (typeof rep === 'number') {
+            return { ...v, uploaderReputation: rep }
           }
         }
         return v
@@ -174,33 +274,51 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
     // Enrich with a small set of comments via Bastyon RPC (best-effort, non-fatal)
     try {
       const pocketNetProxyInstance = await getPocketNetProxyInstance()
-      // Limit comment enrichment to first 10 items to keep latency low
       const subset = videos.slice(0, Math.min(10, videos.length))
       await Promise.all(subset.map(async v => {
         try {
-          // Use the user's suggested param shape
-          const content: any = await (pocketNetProxyInstance.rpc as any).getcontent({ postTxHash: v.hash })
-          const comments: any[] = []
-          const rawComments = content?.comments || content?.data?.comments || []
-          for (const c of rawComments.slice(0, 5)) {
-            comments.push({
-              id: c?.id || c?.hash || String(Math.random()),
-              user: c?.address?.substring(0, 8) || c?.user || 'Anonymous',
-              text: typeof c?.msg === 'string' ? c.msg : (c?.message || ''),
-              timestamp: c?.time ? new Date(c.time * 1000).toISOString() : undefined,
-            })
-          }
+          const resp: any = await (pocketNetProxyInstance.rpc as any).getcomments({ hash: v.hash, limit: 50, offset: 0 })
+          const rawComments: any[] = Array.isArray(resp) ? resp : (resp?.comments || resp?.data?.comments || [])
+          const comments = rawComments.slice(0, 5).map(c => ({
+            id: c?.id || c?.hash || String(Math.random()),
+            user: c?.address?.substring(0, 8) || c?.user || 'Anonymous',
+            text: typeof c?.msg === 'string' ? c.msg : (c?.message || ''),
+            timestamp: c?.time ? new Date(c.time * 1000).toISOString() : undefined,
+          }))
           v.commentData = comments
-          if (typeof v.comments === 'number' && Number.isFinite(content?.commentscount)) {
-            v.comments = content.commentscount
+          if (debugProfiles) {
+            (v as any).debugCommentsRaw = Array.isArray(resp) ? resp.slice(0, 5) : resp
+          }
+          if (typeof v.comments === 'number' && Number.isFinite((resp as any)?.commentscount)) {
+            v.comments = (resp as any).commentscount
+          } else if (typeof v.comments === 'number' && Number.isFinite(rawComments?.length)) {
+            v.comments = rawComments.length
           }
         } catch (err) {
-          // Non-fatal
-          console.warn('getcontent failed for', v.hash)
+          console.warn('getcomments failed for', v.hash)
         }
       }))
     } catch (e) {
       console.warn('Comments enrichment skipped due to error:', e instanceof Error ? e.message : e)
+    }
+
+    // Enrich with PeerTube views (best-effort)
+    try {
+      const tasks = videos.map(async v => {
+        const info = parsePeerTubeUrl(String(v.url || ''))
+        if (!info) return
+        const details = await fetchPeerTubeVideoDetails(info.host, info.id)
+        try {
+          // PeerTube v4+: views at details.views or details.stats.viewers/views
+          const maybe = (details && (details.views ?? details?.stats?.viewers ?? details?.stats?.views))
+          if (Number.isFinite(maybe)) {
+            v.views = Number(maybe)
+          }
+        } catch {}
+      })
+      await Promise.allSettled(tasks)
+    } catch (e) {
+      console.warn('Views enrichment skipped due to error:', e instanceof Error ? e.message : e)
     }
 
     // Respond with the mapped & enriched videos
@@ -488,6 +606,217 @@ export async function uploadVideo(req: Request, res: Response): Promise<void> {
     console.error('Error uploading video:', error)
     res.status(500).json({
       message: 'Failed to upload video',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+/**
+ * GET /api/videos/profile
+ *
+ * Proxy to Bastyon RPC getuserprofile to fetch profile info (avatar, name, reputation)
+ *
+ * Query params:
+ * - address: string (single address)
+ * - addresses: string | string[] (comma-separated or repeated query entries)
+ */
+export async function getUserProfile(req: Request, res: Response): Promise<void> {
+  try {
+    const qAddr = typeof req.query.address === 'string' ? req.query.address.trim() : ''
+    const qAddrs = req.query.addresses
+    let addresses: string[] = []
+
+    if (qAddr) addresses.push(qAddr)
+    if (Array.isArray(qAddrs)) {
+      addresses.push(...qAddrs.flatMap(x => String(x).split(',').map(s => s.trim()).filter(Boolean)))
+    } else if (typeof qAddrs === 'string' && qAddrs.trim()) {
+      addresses.push(...qAddrs.split(',').map(s => s.trim()).filter(Boolean))
+    }
+
+    addresses = Array.from(new Set(addresses.filter(Boolean)))
+    if (addresses.length === 0) {
+      res.status(400).json({ message: 'Missing required query parameter: address or addresses' })
+      return
+    }
+
+    const pocketNetProxyInstance = await getPocketNetProxyInstance()
+    const rpcAny = pocketNetProxyInstance.rpc as any
+
+    async function fetchOne(addr: string): Promise<any | null> {
+      const attempts = [
+        () => rpcAny.getuserprofile({ address: addr, shortForm: 'basic' }),
+        () => rpcAny.getuserprofile({ address: addr, shortForm: 'yes' }),
+        () => rpcAny.getuserprofile({ address: addr }),
+        () => rpcAny.getuserprofile({ addresses: [addr] }),
+      ]
+      for (const attempt of attempts) {
+        try {
+          const resp = await attempt()
+          const prof = Array.isArray(resp) ? resp[0] : resp
+          if (prof) return prof
+        } catch {}
+      }
+      return null
+    }
+
+    let results: any[] = []
+
+    // Try batch first if multiple addresses
+    if (addresses.length > 1) {
+      try {
+        const batchResp = await rpcAny.getuserprofile({ addresses })
+        if (Array.isArray(batchResp) && batchResp.length) {
+          results = batchResp
+        }
+      } catch {}
+    }
+
+    // Fallback to per-address fetching for any missing or if batch failed
+    if (results.length === 0 || results.length < addresses.length) {
+      const map = new Map<string, any>()
+      for (const a of addresses) {
+        const prof = await fetchOne(a)
+        if (prof) map.set(a, prof)
+      }
+      results = addresses.map(a => map.get(a)).filter(Boolean)
+    }
+
+    const normalized = results.map((p: any) => {
+      const avatar = extractAvatarUrl(p)
+      const name = extractDisplayName(p)
+      const reputation = typeof p?.reputation === 'number' ? p.reputation : (typeof p?.rep === 'number' ? p.rep : undefined)
+      const address = p?.address || p?.id || p?.hash || undefined
+      return { address, name, reputation, avatar, raw: p }
+    })
+
+    if (addresses.length === 1) {
+      res.status(200).json(normalized[0] || null)
+      return
+    }
+    res.status(200).json({
+      count: normalized.length,
+      profiles: normalized,
+    })
+  }
+  catch (error) {
+    console.error('Error fetching user profile(s):', error)
+    res.status(500).json({
+      message: 'Failed to fetch user profile(s)',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+}
+
+/**
+ * GET /api/videos/comments
+ *
+ * Proxy to Bastyon RPC getcomments to fetch comments for a post hash.
+ *
+ * Query params:
+ * - hash: string (video txid)
+ * - limit: number (default 50)
+ * - offset: number (default 0)
+ * - includeProfiles: boolean ("1"/"true" to enrich commenter profiles)
+ */
+export async function getComments(req: Request, res: Response): Promise<void> {
+  try {
+    const hash = typeof req.query.hash === 'string' ? req.query.hash.trim() : ''
+    const limit = Number.parseInt(String(req.query.limit ?? '50'), 10) || 50
+    const offset = Number.parseInt(String(req.query.offset ?? '0'), 10) || 0
+    const includeProfiles = String(req.query.includeProfiles ?? '').toLowerCase() === '1' || String(req.query.includeProfiles ?? '').toLowerCase() === 'true'
+
+    if (!hash) {
+      res.status(400).json({ message: 'Missing required query parameter: hash' })
+      return
+    }
+
+    const pocketNetProxyInstance = await getPocketNetProxyInstance()
+    const rpcAny = pocketNetProxyInstance.rpc as any
+
+    const resp: any = await rpcAny.getcomments({ hash, limit, offset })
+    const rawComments: any[] = Array.isArray(resp) ? resp : (resp?.comments || resp?.data?.comments || [])
+    const totalCount = (resp && (resp.commentscount ?? resp.count ?? rawComments.length)) || rawComments.length
+
+    function extractText(msg: any): string {
+      try {
+        if (typeof msg === 'string') {
+          const s = msg.trim()
+          if (s.startsWith('{') && s.endsWith('}')) {
+            const j = JSON.parse(s)
+            return String(j?.message ?? j?.msg ?? '')
+          }
+          return s
+        }
+        if (msg && typeof msg === 'object') {
+          return String(msg.message ?? msg.msg ?? '')
+        }
+      } catch {}
+      return ''
+    }
+
+    const comments = rawComments.map((c: any) => {
+      const addr = c?.address || c?.useraddress || c?.user || undefined
+      return {
+        id: c?.id || c?.hash || undefined,
+        address: addr,
+        user: typeof addr === 'string' ? `${addr.substring(0, 6)}…${addr.substring(addr.length - 4)}` : (c?.user || 'Anonymous'),
+        text: extractText(c?.msg),
+        timestamp: c?.time ? new Date(c.time * 1000).toISOString() : undefined,
+        raw: c,
+      }
+    })
+
+    const result: any = {
+      hash,
+      limit,
+      offset,
+      count: Number.isFinite(totalCount) ? Number(totalCount) : comments.length,
+      comments,
+    }
+
+    if (includeProfiles) {
+      const addrs = Array.from(new Set(comments.map((c: any) => c.address).filter(Boolean))) as string[]
+      if (addrs.length) {
+        const profilesMap: Record<string, any> = {}
+        // Fetch in sequence to be safe
+        for (const a of addrs) {
+          try {
+            const p = await (async () => {
+              const attempts = [
+                () => rpcAny.getuserprofile({ address: a, shortForm: 'basic' }),
+                () => rpcAny.getuserprofile({ address: a, shortForm: 'yes' }),
+                () => rpcAny.getuserprofile({ address: a }),
+                () => rpcAny.getuserprofile({ addresses: [a] }),
+              ]
+              for (const attempt of attempts) {
+                try {
+                  const r = await attempt()
+                  const prof = Array.isArray(r) ? r[0] : r
+                  if (prof) return prof
+                } catch {}
+              }
+              return null
+            })()
+            if (p) {
+              profilesMap[a] = {
+                address: a,
+                name: extractDisplayName(p),
+                reputation: typeof p?.reputation === 'number' ? p.reputation : (typeof p?.rep === 'number' ? p.rep : undefined),
+                avatar: extractAvatarUrl(p),
+              }
+            }
+          } catch {}
+        }
+        result.profiles = profilesMap
+      }
+    }
+
+    res.status(200).json(result)
+  }
+  catch (error) {
+    console.error('Error fetching comments:', error)
+    res.status(500).json({
+      message: 'Failed to fetch comments',
       error: error instanceof Error ? error.message : 'Unknown error',
     })
   }

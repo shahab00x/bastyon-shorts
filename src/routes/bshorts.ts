@@ -6,6 +6,12 @@ export const bshorts = Router()
 // GET /api/videos/bshorts - Fetch #bshorts videos
 bshorts.get('/bshorts', controller.getBShorts)
 
+// GET /api/videos/profile - Proxy getuserprofile
+bshorts.get('/profile', controller.getUserProfile)
+
+// GET /api/videos/comments - Proxy getcomments
+bshorts.get('/comments', controller.getComments)
+
 // POST /api/videos/comment - Post a comment on a video
 bshorts.post('/comment', controller.postComment)
 

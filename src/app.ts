@@ -25,8 +25,23 @@ app.use(cors())
 app.use('/', index)
 app.use('/api/videos', bshorts)
 
-// Serve static files from public directory
-app.use(express.static(path.join(__dirname, 'public')))
+// Serve static files from the project's root-level public directory
+const publicRoot = path.resolve(process.cwd(), 'public')
+app.use(
+  '/playlists',
+  express.static(path.join(publicRoot, 'playlists'), {
+    etag: false,
+    lastModified: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.json')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+        res.setHeader('Pragma', 'no-cache')
+        res.setHeader('Expires', '0')
+      }
+    },
+  })
+)
+app.use(express.static(publicRoot))
 
 // Error handling
 app.use(errorNotFoundHandler)

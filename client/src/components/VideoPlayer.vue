@@ -25,6 +25,8 @@
         class="video-slide"
         :class="{ 'active': currentIndex === index }"
       >
+        <!-- Top-right settings button -->
+        <button class="settings-top-right" @click.stop="toggleSettingsMenu" aria-label="Settings">⚙</button>
         <video 
           ref="videoElements"
           :src="getVideoSource(video.url)" 
@@ -36,6 +38,9 @@
           preload="metadata"
           @click="togglePlayPause(index)"
           @loadeddata="onVideoLoaded(index)"
+          @loadedmetadata="onLoadedMetadata(index)"
+          @timeupdate="onTimeUpdate(index)"
+          @progress="onProgressUpdate(index)"
           @ended="nextVideo"
           @canplay="onVideoCanPlay(index)"
           @play="onVideoPlay(index)"
@@ -59,17 +64,44 @@
           @click.stop="unmuteCurrentVideo(index)"
           aria-label="Unmute"
         >Tap for sound 🔊</button>
+
+        <!-- Light blue seekbar -->
+        <div 
+          class="seekbar"
+          @mousedown.stop.prevent="onSeekStart($event, index)"
+          @touchstart.stop.prevent="onSeekStart($event, index)"
+        >
+          <div class="seekbar-track" ref="seekbarTracks">
+            <div class="seekbar-buffered" :style="{ width: (bufferedPercents[index] || 0) + '%' }"></div>
+            <div class="seekbar-fill" :style="{ width: (progressPercents[index] || 0) + '%' }"></div>
+          </div>
+        </div>
         
         <div class="video-info">
           <div class="bottom-section">
             <div class="account-info">
               <div class="uploader">
-                <img v-if="video.uploaderAvatar" :src="video.uploaderAvatar" alt="avatar" class="uploader-avatar" />
-                <div v-else class="uploader-avatar-fallback">{{ (video.uploader || '?').charAt(0).toUpperCase() }}</div>
+                <div 
+                  v-if="video.uploaderAvatar && !avatarError[index]"
+                  class="usericon"
+                  :style="{
+                    backgroundImage: `url(${video.uploaderAvatar})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center center',
+                    backgroundRepeat: 'no-repeat'
+                  }"
+                >
+                  <sup v-if="video.uploaderReputation != null" class="rep-badge">{{ formatAbbrev(video.uploaderReputation) }}</sup>
+                </div>
+                <div v-else class="uploader-avatar-fallback">
+                  {{ (video.uploader || '?').charAt(0).toUpperCase() }}
+                  <sup v-if="video.uploaderReputation != null" class="rep-badge">{{ formatAbbrev(video.uploaderReputation) }}</sup>
+                </div>
                 <span class="uploader-name">@{{ video.uploader }}</span>
-                <span v-if="video.uploaderReputation != null" class="uploader-rep">• Rep {{ video.uploaderReputation }}</span>
               </div>
-              <span class="video-date">{{ video.formattedDate }}</span>
+              <span class="video-date">
+                {{ video.formattedDate }}<template v-if="video.views != null"> · {{ formatAbbrev(video.views) }} views</template>
+              </span>
               <button class="follow-btn">Follow</button>
             </div>
             <div 
@@ -81,22 +113,15 @@
           </div>
           
           <div class="right-panel">
-            <div class="settings-btn" @click="toggleSettingsMenu">
-              ⚙
-            </div>
-            <div class="star-rating">
-              <div class="stars-container">
-                <span 
-                  v-for="i in 5" 
-                  :key="i" 
-                  class="star"
-                  :class="{ 'filled': i <= Math.round(video.averageRating || video.userRating || 1), 'interactive': currentIndex === index }"
-                  @click="rateVideo(i, index)"
-                >
-                  ★
-                </span>
+            <!-- Compact rating: single star that expands on tap -->
+            <div class="star-rating compact">
+              <button class="star-toggle" @click.stop="toggleRatingExpand(index)" :aria-expanded="ratingExpandedIndex === index">
+                <span class="star" :class="{ 'filled': (video.userRating || Math.round(video.averageRating || 1)) >= 1 }">★</span>
+                <span class="rating-value">{{ (video.userRating || Math.round(video.averageRating || 1)) }}</span>
+              </button>
+              <div v-if="ratingExpandedIndex === index" class="star-chooser">
+                <button v-for="i in 5" :key="i" class="star opt" @click.stop="chooseRating(i, index)">★ {{ i }}</button>
               </div>
-              <div class="likes-count">Avg: {{ (video.averageRating || video.userRating || 1).toFixed(1) }}/5 • {{ video.ratingsCount || 0 }} ratings</div>
             </div>
             
             <div class="comments-icon" @click="toggleCommentsDrawer">
@@ -106,10 +131,6 @@
             
             <div class="share-btn" @click="shareVideo">
               🔗
-            </div>
-            
-            <div class="download-btn" @click="showDownloadOptions">
-              ↓
             </div>
           </div>
         </div>
@@ -246,8 +267,8 @@
   </div>
 </template>
 
-<script>
-import { defineComponent } from 'vue'
+<script lang="ts">
+import { defineComponent, nextTick } from 'vue'
 import Hls from 'hls.js'
 import bastyonApi from '../services/bastyonApi'
 
@@ -288,7 +309,18 @@ export default defineComponent({
       userWantsSound: false,
       // UI state
       bufferingIndex: null,
-      pausedOverlayIndex: null
+      pausedOverlayIndex: null,
+      ratingExpandedIndex: null,
+      avatarError: {},
+      // i18n / language for playlist
+      lang: (navigator.language || 'en').slice(0, 2).toLowerCase(),
+      supportedLangs: ['en','ru','de','fr','ko','es','it','zh'],
+      // seekbar state per index
+      durations: [],
+      currentTimes: [],
+      progressPercents: [],
+      bufferedPercents: [],
+      seekingIndex: null
     };
   },
   computed: {
@@ -297,6 +329,75 @@ export default defineComponent({
     }
   },
   methods: {
+    toggleRatingExpand(index) {
+      this.ratingExpandedIndex = this.ratingExpandedIndex === index ? null : index
+    },
+    chooseRating(i, index) {
+      this.rateVideo(i, index)
+      this.ratingExpandedIndex = null
+    },
+    formatAbbrev(num) {
+      const n = Number(num) || 0
+      if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + 'M'
+      if (n >= 1_000) return (n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1) + 'K'
+      return String(n)
+    },
+    async ensureUploaderProfiles() {
+      try {
+        const missing = Array.from(new Set(
+          this.playlist
+            .filter(v => (!v.uploaderAvatar || v.uploader === v.uploaderAddress || !v.uploader) && v.uploaderAddress)
+            .map(v => v.uploaderAddress)
+            .filter(Boolean)
+        ))
+        if (!missing.length) return
+        // Try batch fetch first
+        try {
+          const resp = await bastyonApi.fetchProfiles(missing)
+          const profiles = Array.isArray(resp?.profiles) ? resp.profiles : []
+          for (const p of profiles) {
+            const addr = p?.address
+            if (!addr) continue
+            this.playlist = this.playlist.map(v => {
+              if (v.uploaderAddress === addr) {
+                const enriched = { ...v }
+                if (!enriched.uploader || enriched.uploader === v.uploaderAddress) {
+                  if (p?.name) enriched.uploader = p.name
+                }
+                if (!enriched.uploaderAvatar && p?.avatar) enriched.uploaderAvatar = p.avatar
+                if (enriched.uploaderReputation == null && typeof p?.reputation === 'number') enriched.uploaderReputation = p.reputation
+                return enriched
+              }
+              return v
+            })
+          }
+        } catch (_) {
+          // Fallback to per-address fetch
+          for (const addr of missing) {
+            try {
+              const p = await bastyonApi.fetchProfile(addr)
+              this.playlist = this.playlist.map(v => {
+                if (v.uploaderAddress === addr) {
+                  const enriched = { ...v }
+                  if (!enriched.uploader || enriched.uploader === v.uploaderAddress) {
+                    if (p?.name) enriched.uploader = p.name
+                  }
+                  if (!enriched.uploaderAvatar && p?.avatar) enriched.uploaderAvatar = p.avatar
+                  if (enriched.uploaderReputation == null && typeof p?.reputation === 'number') enriched.uploaderReputation = p.reputation
+                  return enriched
+                }
+                return v
+              })
+            } catch {}
+          }
+        }
+      } catch (e) {
+        console.warn('ensureUploaderProfiles failed:', e)
+      }
+    },
+    markAvatarError(index: number) {
+      this.avatarError[index] = true
+    },
     // Convert peertube://host/uuid to direct fragmented MP4 for reliable playback
     getVideoSource(url) {
       try {
@@ -315,6 +416,37 @@ export default defineComponent({
       } catch (e) {
         // Fallback to original URL on any error
         return url;
+      }
+    },
+    async addComment() {
+      try {
+        const v = this.currentVideo
+        if (!v || !this.newComment.trim()) return
+        const userAddress = 'user_address_placeholder'
+        await bastyonApi.postComment(v.hash || v.id, this.newComment.trim(), userAddress)
+        // Optimistically append
+        const newItem = {
+          id: `local-${Date.now()}`,
+          user: userAddress.substring(0, 6) + '…' + userAddress.substring(userAddress.length - 4),
+          text: this.newComment.trim(),
+          timestamp: new Date().toISOString()
+        }
+        v.commentData = Array.isArray(v.commentData) ? [...v.commentData, newItem] : [newItem]
+        this.newComment = ''
+      } catch (e) {
+        console.warn('Failed to post comment:', e)
+      }
+    },
+    async donateToCreator() {
+      try {
+        const v = this.currentVideo
+        if (!v || !v.uploaderAddress) return
+        // Placeholder fixed amount
+        await bastyonApi.donatePKoin(v.uploaderAddress, 1, 'user_address_placeholder')
+        alert('Donation sent!')
+      } catch (e) {
+        console.warn('Donation failed:', e)
+        alert('Donation failed')
       }
     },
     // Setup HLS for a particular video index if supported and hlsUrl is present
@@ -422,33 +554,152 @@ export default defineComponent({
         }
       });
     },
+    // Ensure refs are captured safely
+    cacheVideoElements() {
+      // Vue keeps refs updated after nextTick; no-op placeholder for clarity
+    },
+    onLoadedMetadata(index) {
+      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+      if (!videoEl || isNaN(videoEl.duration)) return;
+      this.durations[index] = videoEl.duration;
+      // Initialize buffered/progress when metadata is ready
+      this.onProgressUpdate(index);
+      this.onTimeUpdate(index);
+    },
+    onTimeUpdate(index) {
+      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+      const dur = this.durations[index] || videoEl?.duration || 0;
+      if (!videoEl || !dur || !isFinite(dur)) return;
+      const pct = Math.max(0, Math.min(100, (videoEl.currentTime / dur) * 100));
+      this.progressPercents[index] = pct;
+      this.currentTimes[index] = videoEl.currentTime;
+    },
+    onProgressUpdate(index) {
+      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+      const dur = this.durations[index] || videoEl?.duration || 0;
+      if (!videoEl || !dur || !isFinite(dur)) return;
+      try {
+        const buf = videoEl.buffered;
+        let end = 0;
+        if (buf && buf.length) {
+          end = buf.end(buf.length - 1);
+        }
+        const pct = Math.max(0, Math.min(100, (end / dur) * 100));
+        this.bufferedPercents[index] = pct;
+      } catch (_) {}
+    },
+    onSeekStart(e, index) {
+      this.seekingIndex = index;
+      this.onSeekMove(e, index);
+      const move = (ev) => this.onSeekMove(ev, index);
+      const up = () => {
+        this.onSeekEnd(index);
+        window.removeEventListener('mousemove', move);
+        window.removeEventListener('touchmove', move);
+        window.removeEventListener('mouseup', up);
+        window.removeEventListener('touchend', up);
+        window.removeEventListener('touchcancel', up);
+      };
+      window.addEventListener('mousemove', move, { passive: false });
+      window.addEventListener('touchmove', move, { passive: false });
+      window.addEventListener('mouseup', up, { passive: true });
+      window.addEventListener('touchend', up, { passive: true });
+      window.addEventListener('touchcancel', up, { passive: true });
+    },
+    onSeekMove(e, index) {
+      if (this.seekingIndex !== index) return;
+      const track = (this.$refs.seekbarTracks && Array.isArray(this.$refs.seekbarTracks))
+        ? this.$refs.seekbarTracks[index]
+        : this.$refs.seekbarTracks;
+      if (!track) return;
+      const rect = track.getBoundingClientRect();
+      const clientX = this._eventClientX(e);
+      const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+      const dur = this.durations[index] || videoEl?.duration || 0;
+      if (videoEl && dur && isFinite(dur)) {
+        try { videoEl.currentTime = frac * dur; } catch (_) {}
+        const pct = frac * 100;
+        this.progressPercents[index] = pct;
+      }
+    },
+    onSeekEnd(index) {
+      this.seekingIndex = null;
+    },
+    _eventClientX(e) {
+      if (e.touches && e.touches.length) return e.touches[0].clientX;
+      if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0].clientX;
+      return e.clientX;
+    },
     async fetchVideos() {
       // Set loading state
       this.loading = true;
       this.error = null;
       
       try {
-        const videos = await bastyonApi.fetchBShorts();
-        
+        let videos = []
+        const effectiveLang = this.supportedLangs.includes(this.lang) ? this.lang : 'en'
+        try {
+          videos = await bastyonApi.fetchPlaylist(effectiveLang);
+        } catch (e) {
+          console.warn('Static playlist fetch failed, falling back to API:', e);
+        }
+        if (!Array.isArray(videos) || videos.length === 0) {
+          try {
+            videos = await bastyonApi.fetchBShorts();
+          } catch (e) {
+            console.warn('API fetch failed:', e);
+            videos = []
+          }
+        }
+        // If still empty, fallback to mock data for demo
+        if (!Array.isArray(videos) || videos.length === 0) {
+          videos = [
+            {
+              id: 1,
+              url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
+              uploader: 'bastyon_user1',
+              description: 'This is a sample short video about Bastyon. #bshorts #bastyon',
+              userRating: 1,
+              comments: [
+                { id: 1, user: 'user2', text: 'Great video!' },
+                { id: 2, user: 'user3', text: 'Thanks for sharing' }
+              ]
+            },
+            {
+              id: 2,
+              url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
+              uploader: 'bastyon_user2',
+              description: 'Another awesome short video on Bastyon platform. #bshorts',
+              userRating: 1,
+              comments: [
+                { id: 1, user: 'user1', text: 'Love this!' }
+              ]
+            }
+          ]
+        }
         if (Array.isArray(videos)) {
-          this.playlist = videos.filter(v => v.hasVideo !== false)
-          // Optionally filter by duration < 2 minutes
+          this.playlist = videos.filter(v => v && v.hasVideo !== false)
           this.playlist = this.playlist.filter(v => !v.duration || v.duration < 120)
+          // init seek arrays
+          this.progressPercents = new Array(this.playlist.length).fill(0)
+          this.bufferedPercents = new Array(this.playlist.length).fill(0)
+          this.durations = new Array(this.playlist.length).fill(0)
+          this.currentTimes = new Array(this.playlist.length).fill(0)
           this.$nextTick(() => {
-            // Ensure video elements ref is updated
             this.cacheVideoElements();
-            // Initialize HLS for the first video immediately for reliable autoplay
             this.setupHlsForIndex(0);
           });
+          // Best-effort: fill missing uploader avatars/names/reps
+          await this.ensureUploaderProfiles()
         }
-        
         // Initialize video cache
         this.initializeVideoCache();
+        // Hide error overlay if we have fallback content
+        this.error = null;
       } catch (error) {
         console.error('Error fetching videos:', error);
-        this.error = error.message || 'Failed to load videos. Please try again later.';
-        
-        // Fallback to mock data if API fails
+        // Fallback to mock data if API totally fails
         this.playlist = [
           {
             id: 1,
@@ -472,9 +723,10 @@ export default defineComponent({
             ]
           }
         ];
-        
         // Initialize video cache
         this.initializeVideoCache();
+        // Hide error overlay since we show fallback content
+        this.error = null;
       } finally {
         // Reset loading state
         this.loading = false;
@@ -594,7 +846,7 @@ export default defineComponent({
       if (index >= 0 && index < this.playlist.length && !this.videoCache.has(index)) {
         const video = this.playlist[index];
         const videoElement = document.createElement('video');
-        videoElement.src = video.url;
+        videoElement.src = this.getVideoSource(video.url);
         videoElement.preload = 'metadata';
         
         // Add to cache
@@ -643,8 +895,34 @@ export default defineComponent({
     toggleDescriptionDrawer() {
       this.showDescriptionDrawer = !this.showDescriptionDrawer;
     },
-    toggleCommentsDrawer() {
-      this.showCommentsDrawer = !this.showCommentsDrawer;
+    async loadCommentsForCurrent() {
+      try {
+        const v = this.currentVideo
+        if (!v || !v.hash) return
+        const result = await bastyonApi.fetchComments(v.hash, { limit: 50, includeProfiles: true })
+        const profiles = result?.profiles || {}
+        const mapped = (result?.comments || []).map(c => {
+          const prof = c.address ? profiles[c.address] : null
+          return {
+            ...c,
+            user: prof?.name || c.user,
+            avatar: prof?.avatar,
+            reputation: prof?.reputation
+          }
+        })
+        this.$set ? this.$set(v, 'commentData', mapped) : (v.commentData = mapped)
+        // Update count if provided
+        if (Number.isFinite(result?.count)) v.comments = Number(result.count)
+      } catch (e) {
+        console.warn('Failed to load comments:', e)
+      }
+    },
+    async toggleCommentsDrawer() {
+      const opening = !this.showCommentsDrawer
+      this.showCommentsDrawer = opening;
+      if (opening) {
+        await this.loadCommentsForCurrent()
+      }
     },
     toggleSettingsMenu() {
       this.showSettingsMenu = !this.showSettingsMenu;
@@ -900,6 +1178,39 @@ export default defineComponent({
 </script>
 
 <style scoped>
+/* Light blue themed seekbar inspired by TikTok/YouTube Shorts */
+.seekbar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 72px; /* sit above bottom info and buttons */
+  height: 20px; /* tap target height */
+  display: flex;
+  align-items: center;
+  z-index: 6;
+}
+.seekbar-track {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.25);
+  overflow: hidden;
+}
+.seekbar-buffered {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: rgba(90, 200, 250, 0.35); /* light blue buffer */
+}
+.seekbar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: #5ac8fa; /* iOS light blue */
+}
 .video-player-container {
   position: relative;
   height: 100vh;
@@ -1022,9 +1333,70 @@ export default defineComponent({
   bottom: 0;
   left: 0;
   right: 0;
-  top: 0;
-  pointer-events: none;
+  padding: 16px;
 }
+
+/* Bastyon-style avatar */
+.usericon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  margin-right: 8px;
+  background-color: #333;
+}
+
+.rep-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 10px;
+  padding: 1px 4px;
+}
+
+/* Top-right settings */
+.settings-top-right {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  background: rgba(0,0,0,0.35);
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  padding: 6px 10px;
+}
+
+/* Compact star rating */
+.star-rating.compact { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.star-toggle {
+  background: rgba(0,0,0,0.35);
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.star-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(0,0,0,0.5);
+  padding: 8px;
+  border-radius: 8px;
+}
+.star-chooser .opt { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 4px 8px; }
+
+/* Drawer polish */
+.drawer-content { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+.description-drawer .drawer-content h3,
+.comments-drawer .drawer-content h3 { margin-top: 8px; }
 
 .bottom-section {
   position: absolute;

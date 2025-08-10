@@ -1,6 +1,10 @@
 import { app } from './app'
+import { startPlaylistScheduler } from './services/playlistScheduler'
 
 const port = app.get('port')
+
+// Start the playlist scheduler (runs immediately and every 10 minutes)
+startPlaylistScheduler()
 
 const server = app.listen(port, onListening)
 server.on('error', onError)
