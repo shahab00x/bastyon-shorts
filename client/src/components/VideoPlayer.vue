@@ -159,7 +159,6 @@
       <div class="drawer-content" @click.stop>
         <div class="drawer-header"><h3>Video Description</h3></div>
         <p>{{ currentVideo?.description }}</p>
-        <button @click="toggleDescriptionDrawer">Close</button>
       </div>
     </div>
     
@@ -262,15 +261,32 @@
             </div>
           </div>
         </div>
-        <div class="add-comment">
-          <textarea 
-            v-model="newComment" 
-            placeholder="Add a comment..."
-          ></textarea>
-          <button @click="addComment">Post</button>
-          <button @click="donateToCreator">Donate with PKoin</button>
+        <!-- Sticky footer: add comment + donate -->
+        <div class="drawer-footer">
+          <div class="add-comment-row">
+            <input
+              type="text"
+              v-model="newComment"
+              placeholder="Add a comment..."
+              @keyup.enter="submitComment"
+              aria-label="Add a comment"
+            />
+            <button
+              class="send-btn"
+              :disabled="!newComment || !newComment.trim()"
+              @click="submitComment"
+              title="Post comment"
+              aria-label="Post comment"
+            >📨</button>
+          </div>
+          <div class="donate-row">
+            <span class="donate-label">Donate</span>
+            <button :class="['donate-chip', { active: selectedDonate === 1 }]" @click="selectDonate(1)" aria-label="Donate 1 pkoin">🪙 1</button>
+            <button :class="['donate-chip', { active: selectedDonate === 2 }]" @click="selectDonate(2)" aria-label="Donate 2 pkoins">🪙 2</button>
+            <button :class="['donate-chip', { active: selectedDonate === 5 }]" @click="selectDonate(5)" aria-label="Donate 5 pkoins">🪙 5</button>
+            <button :class="['donate-chip', 'custom', { active: selectedDonate === 'custom' }]" @click="selectCustomDonate" aria-label="Donate custom amount">Custom amount</button>
+          </div>
         </div>
-        <button @click="toggleCommentsDrawer">Close</button>
       </div>
     </div>
     
@@ -373,6 +389,7 @@ export default defineComponent({
       showCommentsDrawer: false,
       showSettingsMenu: false,
       newComment: '',
+      selectedDonate: null as any,
       touchStartY: 0,
       touchStartX: 0,
       touchStartTime: 0,
@@ -1281,6 +1298,26 @@ export default defineComponent({
       console.log('Reply to:', comment)
       alert('Reply composer coming soon')
     },
+    submitComment() {
+      const text = (this.newComment || '').trim();
+      if (!text) return;
+      // Placeholder: integrate with Bastyon API when ready
+      console.log('Submit comment:', text);
+      alert('Comment posting coming soon');
+      this.newComment = '';
+    },
+    selectDonate(amount) {
+      this.selectedDonate = amount;
+      console.log('Selected donate amount:', amount);
+    },
+    selectCustomDonate() {
+      this.selectedDonate = 'custom';
+      const v = typeof window !== 'undefined' ? window.prompt('Enter custom amount of pkoins:') : null;
+      const n = Number(v);
+      if (v != null && Number.isFinite(n) && n > 0) {
+        this.selectedDonate = n;
+      }
+    },
     async toggleCommentsDrawer() {
       const opening = !this.showCommentsDrawer
       this.showCommentsDrawer = opening;
@@ -1960,6 +1997,69 @@ export default defineComponent({
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 .drawer-header h3 { margin: 0; }
+
+/* Sticky footer inside drawer content */
+.drawer-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  background-color: var(--background-darker);
+  margin: 10px -20px 0; /* stretch edge-to-edge like header */
+  padding: 10px 20px 12px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+.add-comment-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.add-comment-row input[type="text"] {
+  flex: 1;
+  height: 36px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: var(--background-darkest);
+  color: var(--text-primary);
+  padding: 0 12px;
+}
+.send-btn {
+  height: 36px;
+  width: 44px;
+  border-radius: 18px;
+  border: none;
+  background: var(--accent, #3fa3ff);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.donate-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.donate-label {
+  font-size: 13px;
+  color: var(--text-secondary, rgba(255,255,255,0.8));
+}
+.donate-chip {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.25);
+  color: var(--text-primary);
+  border-radius: 16px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.donate-chip.active { background: rgba(255, 215, 0, 0.15); border-color: #FFD700; }
+.donate-chip.custom { border-style: dashed; }
+
+/* Extra padding at bottom so last comment isn't too tight against footer */
+.comments-list { padding-bottom: 120px; }
 
 .add-comment {
   margin: 20px 0;
