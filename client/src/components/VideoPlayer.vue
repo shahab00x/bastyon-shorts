@@ -21,7 +21,7 @@
     >
       <div 
         v-for="(video, index) in playlist" 
-        :key="video.id" 
+        :key="video.hash || video.id || index" 
         class="video-slide"
         :class="{ 'active': currentIndex === index }"
       >
@@ -35,7 +35,7 @@
           webkit-playsinline
           x5-playsinline
           preload="metadata"
-          @click="togglePlayPause(index)"
+          @click="togglePlayPause($event, index)"
           @loadeddata="onVideoLoaded(index)"
           @loadedmetadata="onLoadedMetadata(index)"
           @timeupdate="onTimeUpdate(index)"
@@ -52,7 +52,7 @@
         </div>
 
         <!-- Pause overlay -->
-        <div v-if="pausedOverlayIndex === index" class="pause-overlay" @click.stop="togglePlayPause(index)">
+        <div v-if="pausedOverlayIndex === index" class="pause-overlay" @click.stop="togglePlayPause($event, index)">
           ▶
         </div>
 
@@ -538,15 +538,27 @@ export default defineComponent({
       }
     },
     // Toggle play/pause on tap
-    togglePlayPause(index) {
-      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+    togglePlayPause(e, index) {
+      // Always operate on the active slide to avoid layering issues
+      let videoEl = null;
+      try {
+        const activeSlide = this.$el.querySelector('.video-slide.active');
+        if (activeSlide) {
+          videoEl = activeSlide.querySelector('video');
+        }
+      } catch (_) {}
+      // Fallback: use event target or refs
+      if (!videoEl && e && e.currentTarget && e.currentTarget.tagName === 'VIDEO') {
+        videoEl = e.currentTarget;
+      }
+      if (!videoEl) videoEl = this.$refs.videoElements?.[this.currentIndex] || this.$refs.videoElements;
       if (!videoEl) return;
       if (videoEl.paused) {
         this.pausedOverlayIndex = null;
         videoEl.play().catch(() => {});
       } else {
         videoEl.pause();
-        this.pausedOverlayIndex = index;
+        this.pausedOverlayIndex = this.currentIndex;
       }
     },
     // Destroy HLS instance for an index
@@ -1307,11 +1319,15 @@ export default defineComponent({
   width: 100%;
   height: 100%;
   opacity: 0;
+  pointer-events: none; /* Prevent hidden slides from intercepting clicks */
+  z-index: 1; /* Ensure base stacking below the active slide */
   transition: opacity 0.3s ease;
 }
 
 .video-slide.active {
   opacity: 1;
+  pointer-events: auto; /* Only the active slide should be interactive */
+  z-index: 2;
 }
 
 .unmute-btn {
@@ -1369,6 +1385,16 @@ export default defineComponent({
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* Prevent non-active videos from capturing taps */
+.video-slide:not(.active) video {
+  pointer-events: none;
+}
+
+/* Explicitly allow pointer events on the active video's element */
+.video-slide.active video {
+  pointer-events: auto;
 }
 
 /* Buffering overlay */
