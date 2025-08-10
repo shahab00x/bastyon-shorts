@@ -90,8 +90,8 @@ function mapItemsToClientVideos(items: any[]) {
 
     const score = Number(item?.ratings?.score ?? 0) || 0
     const ratingsCount = Number(item?.ratings?.ratingsCount ?? 0) || 0
-    const averageRatingRaw = ratingsCount > 0 ? score / ratingsCount : 1
-    const averageRating = Math.max(1, Math.min(5, averageRatingRaw))
+    const averageRatingRaw = ratingsCount > 0 ? score / ratingsCount : 0
+    const averageRating = ratingsCount > 0 ? Math.max(1, Math.min(5, averageRatingRaw)) : 0
 
     const uploaderAddress = item.author_address
     const authorName = item.author_name || item?.author?.name || item?.author?.nickname || item?.author?.nick

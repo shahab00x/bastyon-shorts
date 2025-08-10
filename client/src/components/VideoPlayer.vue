@@ -18,12 +18,16 @@
       @touchmove="handleTouchMove"
       @touchend="handleTouchEnd"
       @touchcancel="handleTouchCancel"
+      @mousedown="handleMouseDown"
+      @mousemove="handleMouseMove"
+      @mouseup="handleMouseUp"
+      @mouseleave="handleMouseUp"
     >
       <div 
         v-for="(video, index) in playlist" 
         :key="video.hash || video.id || index" 
         class="video-slide"
-        :class="{ 'active': currentIndex === index }"
+        :class="{ 'active': currentIndex === index, 'above': index < currentIndex, 'below': index > currentIndex }"
       >
         <!-- Top-right settings button -->
         <button class="settings-top-right" @click.stop="toggleSettingsMenu" aria-label="Settings">⚙</button>
@@ -35,6 +39,7 @@
           webkit-playsinline
           x5-playsinline
           preload="metadata"
+          :class="videoFit[index] === 'contain' ? 'fit-contain' : 'fit-cover'"
           @click="togglePlayPause($event, index)"
           @loadeddata="onVideoLoaded(index)"
           @loadedmetadata="onLoadedMetadata(index)"
@@ -119,9 +124,10 @@
           <div class="right-panel">
             <!-- Compact rating: single star that expands on tap -->
             <div class="star-rating compact">
-              <button class="star-toggle" @click.stop="toggleRatingExpand(index)" :aria-expanded="ratingExpandedIndex === index">
-                <span class="star" :class="{ 'filled': (video.userRating || Math.round(video.averageRating || 1)) >= 1 }">★</span>
-                <span class="rating-value">{{ (video.userRating || Math.round(video.averageRating || 1)) }}</span>
+              <button class="star-toggle" @click.stop="toggleRatingExpand(index)" :aria-expanded="ratingExpandedIndex === index" :title="`${Number(video.averageRating||0).toFixed(1)} avg · ${formatAbbrev(video.ratingsCount||0)} ratings`">
+                <span class="star" :class="{ 'filled': ((video.userRating != null ? video.userRating : Math.round(video.averageRating || 0)) >= 1) }">★</span>
+                <span class="rating-value">{{ Number(video.averageRating || 0).toFixed(1) }}</span>
+                <span class="rating-count">({{ formatAbbrev(video.ratingsCount || 0) }})</span>
               </button>
               <div v-if="ratingExpandedIndex === index" class="star-chooser">
                 <button v-for="i in 5" :key="i" class="star opt" @click.stop="chooseRating(i, index)">★ {{ i }}</button>
@@ -148,8 +154,9 @@
       @touchstart="handleDrawerTouchStart"
       @touchmove="handleDrawerTouchMove"
       @touchend="handleDrawerTouchEnd"
+      @click="toggleDescriptionDrawer"
     >
-      <div class="drawer-content">
+      <div class="drawer-content" @click.stop>
         <h3>Video Description</h3>
         <p>{{ currentVideo?.description }}</p>
         <button @click="toggleDescriptionDrawer">Close</button>
@@ -163,9 +170,10 @@
       @touchstart="handleDrawerTouchStart"
       @touchmove="handleDrawerTouchMove"
       @touchend="handleDrawerTouchEnd"
+      @click="toggleCommentsDrawer"
     >
-      <div class="drawer-content">
-        <h3>Comments</h3>
+      <div class="drawer-content" @click.stop>
+        <div class="drawer-header"><h3>Comments</h3></div>
         <div class="comments-list">
           <div 
             v-for="(comment, cIdx) in currentVideo?.commentData" 
@@ -369,6 +377,13 @@ export default defineComponent({
       touchStartX: 0,
       touchStartTime: 0,
       drawerTouchStartY: 0, // For drawer swipe handling
+      // Treat as mobile only when touch is supported
+      isMobile: (typeof window !== 'undefined') && (('ontouchstart' in window) || (navigator && navigator.maxTouchPoints > 0)),
+      // Mouse-based swipe support (desktop)
+      mouseDown: false,
+      mouseStartY: 0,
+      mouseStartX: 0,
+      mouseStartTime: 0,
       isVideoPlaying: false,
       showCameraInterface: false,
       videoCache: new Map(), // Cache for loaded videos
@@ -394,6 +409,8 @@ export default defineComponent({
       pausedOverlayIndex: null,
       ratingExpandedIndex: null,
       avatarError: {},
+      // per-video fit mode: 'cover' | 'contain'
+      videoFit: [],
       // i18n / language for playlist
       lang: (navigator.language || 'en').slice(0, 2).toLowerCase(),
       supportedLangs: ['en','ru','de','fr','ko','es','it','zh'],
@@ -707,6 +724,8 @@ export default defineComponent({
       // Initialize buffered/progress when metadata is ready
       this.onProgressUpdate(index);
       this.onTimeUpdate(index);
+      // Decide best fit for this video's aspect ratio on this device
+      this.updateVideoFit(index);
     },
     onTimeUpdate(index) {
       const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
@@ -804,7 +823,9 @@ export default defineComponent({
               url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
               uploader: 'bastyon_user1',
               description: 'This is a sample short video about Bastyon. #bshorts #bastyon',
-              userRating: 1,
+              userRating: 0,
+              averageRating: 0,
+              ratingsCount: 0,
               comments: [
                 { id: 1, user: 'user2', text: 'Great video!' },
                 { id: 2, user: 'user3', text: 'Thanks for sharing' }
@@ -815,7 +836,9 @@ export default defineComponent({
               url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
               uploader: 'bastyon_user2',
               description: 'Another awesome short video on Bastyon platform. #bshorts',
-              userRating: 1,
+              userRating: 0,
+              averageRating: 0,
+              ratingsCount: 0,
               comments: [
                 { id: 1, user: 'user1', text: 'Love this!' }
               ]
@@ -826,6 +849,21 @@ export default defineComponent({
           let list = this.dedupeByHash(videos)
           list = list.filter(v => v && v.hasVideo !== false)
           list = list.filter(v => !v.duration || v.duration < 120)
+          // Normalize ratings so UI always has values
+          list = list.map(v => {
+            const avg = Number(v.averageRating)
+            const user = Number(v.userRating)
+            let averageRating = Number.isFinite(avg) ? avg : (Number.isFinite(user) ? user : 0)
+            // Clamp to [0,5]
+            if (!Number.isFinite(averageRating)) averageRating = 0
+            averageRating = Math.max(0, Math.min(5, averageRating))
+            let ratingsCount = Number(v.ratingsCount)
+            if (!Number.isFinite(ratingsCount)) {
+              const rc = Number(v?.ratings?.ratingsCount)
+              ratingsCount = Number.isFinite(rc) ? rc : 0
+            }
+            return { ...v, averageRating, ratingsCount }
+          })
           this.playlist = list
           // init seek arrays
           this.progressPercents = new Array(this.playlist.length).fill(0)
@@ -853,7 +891,9 @@ export default defineComponent({
             url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
             uploader: 'bastyon_user1',
             description: 'This is a sample short video about Bastyon. #bshorts #bastyon',
-            userRating: 1,
+            userRating: 0,
+            averageRating: 0,
+            ratingsCount: 0,
             comments: [
               { id: 1, user: 'user2', text: 'Great video!' },
               { id: 2, user: 'user3', text: 'Thanks for sharing' }
@@ -864,7 +904,9 @@ export default defineComponent({
             url: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
             uploader: 'bastyon_user2',
             description: 'Another awesome short video on Bastyon platform. #bshorts',
-            userRating: 1,
+            userRating: 0,
+            averageRating: 0,
+            ratingsCount: 0,
             comments: [
               { id: 1, user: 'user1', text: 'Love this!' }
             ]
@@ -1052,6 +1094,8 @@ export default defineComponent({
       try {
         const v = this.currentVideo
         if (!v) return
+        // Only load/sort comments the first time per video
+        if (Array.isArray(v.commentData) && v.commentData.length) return
         const videoId = v.hash || v.id || v.txid
         if (!videoId) return
         const result = await bastyonApi.fetchComments(videoId, { limit: 50, includeProfiles: true, includeReplies: false, repliesLimit: 10 })
@@ -1100,12 +1144,59 @@ export default defineComponent({
             scoreDown: scores.scoreDown,
           }
         })
+        // Sort by net score (scoreUp - scoreDown) descending on first load
+        mapped.sort((a, b) => ((b.scoreUp - b.scoreDown) - (a.scoreUp - a.scoreDown)))
         this.$set ? this.$set(v, 'commentData', mapped) : (v.commentData = mapped)
         // Update count if provided
         if (Number.isFinite(result?.count)) v.comments = Number(result.count)
       } catch (e) {
         console.warn('Failed to load comments:', e)
       }
+    },
+    // Desktop swipe support
+    handleMouseDown(e) {
+      if (!this.isMobile) return;
+      this.mouseDown = true;
+      this.mouseStartY = e.clientY;
+      this.mouseStartX = e.clientX;
+      this.mouseStartTime = Date.now();
+    },
+    handleMouseMove(e) {
+      if (!this.isMobile) return;
+      if (!this.mouseDown) return;
+      // We can add live preview transform if desired in the future
+    },
+    handleMouseUp(e) {
+      if (!this.isMobile) return;
+      if (!this.mouseDown) return;
+      const endY = e.clientY;
+      const endX = e.clientX;
+      const diffY = this.mouseStartY - endY;
+      const diffX = this.mouseStartX - endX;
+      const duration = Date.now() - this.mouseStartTime;
+      const isFast = duration < 300;
+      const isLong = Math.abs(diffY) > 50 || Math.abs(diffX) > 50;
+      if (isFast && isLong) {
+        if (Math.abs(diffY) > Math.abs(diffX)) {
+          if (diffY > 0) this.nextVideo(); else this.prevVideo();
+        } else {
+          if (diffX > 0) this.openCameraInterface(); else this.closeCameraInterface();
+        }
+      }
+      this.mouseDown = false;
+      this.mouseStartY = 0;
+      this.mouseStartX = 0;
+      this.mouseStartTime = 0;
+    },
+    updateVideoFit(index) {
+      const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+      if (!el || !el.videoWidth || !el.videoHeight) return;
+      const videoAR = el.videoWidth / el.videoHeight;
+      const viewportAR = (window.innerWidth || 360) / (window.innerHeight || 640);
+      // If video is much wider than viewport (landscape), use contain to avoid over-cropping
+      // Otherwise prefer cover for immersive experience
+      const useContain = videoAR / viewportAR > 1.2; // threshold tuned for balance
+      this.$set ? this.$set(this.videoFit, index, useContain ? 'contain' : 'cover') : (this.videoFit[index] = useContain ? 'contain' : 'cover');
     },
     async toggleReplies(cIdx) {
       const v = this.currentVideo
@@ -1491,14 +1582,25 @@ export default defineComponent({
   opacity: 0;
   pointer-events: none; /* Prevent hidden slides from intercepting clicks */
   z-index: 1; /* Ensure base stacking below the active slide */
-  transition: opacity 0.3s ease;
+  transform: translateY(100%);
+  transition: opacity 0.25s ease, transform 0.35s ease;
 }
 
 .video-slide.active {
   opacity: 1;
+  transform: translateY(0);
   pointer-events: auto; /* Only the active slide should be interactive */
   z-index: 2;
 }
+
+/* Place non-active slides just above/below for smoother vertical transition */
+.video-slide.above { transform: translateY(-100%); }
+.video-slide.below { transform: translateY(100%); }
+
+/* Video sizing helpers */
+.video-slide video { width: 100%; height: 100%; }
+.fit-cover { object-fit: cover; }
+.fit-contain { object-fit: contain; background-color: #000; }
 
 .unmute-btn {
   position: absolute;
@@ -1812,6 +1914,17 @@ export default defineComponent({
 .drawer-content h3 {
   margin-top: 0;
   color: var(--text-primary);
+}
+
+/* Sticky header for drawers (e.g., Comments) */
+.drawer-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background-color: var(--background-darker);
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
 .add-comment {

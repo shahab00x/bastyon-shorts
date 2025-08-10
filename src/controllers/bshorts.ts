@@ -200,8 +200,8 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
       // Ratings
       const score = Number(item?.ratings?.score ?? 0) || 0
       const ratingsCount = Number(item?.ratings?.ratingsCount ?? 0) || 0
-      const averageRatingRaw = ratingsCount > 0 ? score / ratingsCount : 1
-      const averageRating = Math.max(1, Math.min(5, averageRatingRaw))
+      const averageRatingRaw = ratingsCount > 0 ? score / ratingsCount : 0
+      const averageRating = ratingsCount > 0 ? Math.max(1, Math.min(5, averageRatingRaw)) : 0
 
       const author = item?.author || {}
       const topAuthorName = item.author_name
