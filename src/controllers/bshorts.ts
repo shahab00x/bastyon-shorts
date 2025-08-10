@@ -89,6 +89,20 @@ function parsePeerTubeUrl(url: string): { host: string, id: string } | null {
   return null
 }
 
+// Generic dedupe helper preserving order
+function dedupeByHashArray<T>(arr: T[], getHash: (t: T) => string): T[] {
+  const seen = new Set<string>()
+  const out: T[] = []
+  for (const el of arr || []) {
+    const h = getHash(el)
+    if (!h) continue
+    if (seen.has(h)) continue
+    seen.add(h)
+    out.push(el)
+  }
+  return out
+}
+
 /**
  * GET /api/videos/bshorts
  *
@@ -139,6 +153,9 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
       console.warn('Upstream playlists API failed, responding with empty list:', e?.message || e)
       items = []
     }
+
+    // Dedupe upstream items by video_hash/hash to avoid repeated entries
+    items = dedupeByHashArray(items, (it: any) => String(it?.video_hash ?? it?.hash ?? ''))
 
     let videos = items.map((item: any) => {
       const duration = Number(item?.peertube?.durationSeconds ?? 0) || 0
@@ -206,6 +223,9 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         views: undefined as number | undefined,
       }
     })
+
+    // Dedupe mapped videos by hash/id/txid to ensure uniqueness
+    videos = dedupeByHashArray(videos, (v: any) => String(v?.hash ?? v?.id ?? v?.txid ?? ''))
 
     // Enrich with Bastyon user profiles (best-effort)
     try {

@@ -400,6 +400,18 @@ export default defineComponent({
     markAvatarError(index: number) {
       this.avatarError[index] = true
     },
+    // Dedupe videos by their unique hash/id/txid while preserving order
+    dedupeByHash(list) {
+      const seen = new Set()
+      const out = []
+      for (const v of Array.isArray(list) ? list : []) {
+        const h = String(v?.hash ?? v?.id ?? v?.txid ?? '')
+        if (!h || seen.has(h)) continue
+        seen.add(h)
+        out.push(v)
+      }
+      return out
+    },
     // Convert peertube://host/uuid to direct fragmented MP4 for reliable playback
     getVideoSource(url) {
       try {
@@ -681,8 +693,10 @@ export default defineComponent({
           ]
         }
         if (Array.isArray(videos)) {
-          this.playlist = videos.filter(v => v && v.hasVideo !== false)
-          this.playlist = this.playlist.filter(v => !v.duration || v.duration < 120)
+          let list = this.dedupeByHash(videos)
+          list = list.filter(v => v && v.hasVideo !== false)
+          list = list.filter(v => !v.duration || v.duration < 120)
+          this.playlist = list
           // init seek arrays
           this.progressPercents = new Array(this.playlist.length).fill(0)
           this.bufferedPercents = new Array(this.playlist.length).fill(0)

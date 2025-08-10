@@ -42,6 +42,31 @@ async function cleanupEmptyPlaylistFiles(dir: string): Promise<void> {
   } catch {}
 }
 
+// Dedupe helpers to ensure unique videos by their hash/txid before writing JSON
+function dedupeRawItemsByHash(items: any[]): any[] {
+  const seen = new Set<string>()
+  const out: any[] = []
+  for (const it of items || []) {
+    const h = String(it?.video_hash ?? it?.hash ?? '')
+    if (!h) continue
+    if (seen.has(h)) continue
+    seen.add(h)
+    out.push(it)
+  }
+  return out
+}
+
+function dedupeVideosByHash(videos: any[]): any[] {
+  const seen = new Set<string>()
+  return (videos || []).filter(v => {
+    const h = String(v?.hash ?? v?.id ?? v?.txid ?? '')
+    if (!h) return false
+    if (seen.has(h)) return false
+    seen.add(h)
+    return true
+  })
+}
+
 function mapItemsToClientVideos(items: any[]) {
   return items.map((item: any) => {
     const duration = Number(item?.peertube?.durationSeconds ?? 0) || 0
@@ -154,7 +179,8 @@ async function generatePlaylistsOnce() {
   for (const lang of LANGS) {
     try {
       const rawItems = await fetchPlaylistItemsForLang(lang, 100)
-      const videos = mapItemsToClientVideos(rawItems)
+      const uniqueRawItems = dedupeRawItemsByHash(rawItems)
+      const videos = dedupeVideosByHash(mapItemsToClientVideos(uniqueRawItems))
 
       const outDir = path.join(process.cwd(), 'public', 'playlists', lang)
 
