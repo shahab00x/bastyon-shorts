@@ -172,8 +172,28 @@
             :key="comment.id || comment.hash || cIdx" 
             class="comment"
           >
-            <p><strong>{{ comment.user }}:</strong> {{ comment.text }}</p>
-            <span class="comment-date">{{ comment.timestamp }}</span>
+            <div 
+              v-if="comment.avatar"
+              class="usericon"
+              :style="{
+                backgroundImage: `url(${comment.avatar})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center center',
+                backgroundRepeat: 'no-repeat'
+              }"
+            >
+              <sup v-if="comment.reputation != null" class="rep-badge">{{ formatAbbrev(comment.reputation) }}</sup>
+            </div>
+            <div v-else class="uploader-avatar-fallback">
+              {{ (comment.user || '?').charAt(0).toUpperCase() }}
+            </div>
+            <div class="comment-content">
+              <div class="comment-header">
+                <strong class="comment-author">{{ comment.user }}</strong>
+                <span class="comment-date">{{ comment.timestamp }}</span>
+              </div>
+              <p class="comment-text">{{ comment.text }}</p>
+            </div>
           </div>
         </div>
         <div class="add-comment">
@@ -978,13 +998,13 @@ export default defineComponent({
         const profiles = result?.profiles || {}
         const mapped = (result?.comments || []).map((c, i) => {
           const prof = c.address ? profiles[c.address] : null
-          const displayUser = prof?.name || c.user || (c.address ? (c.address.substring(0, 6) + '…' + c.address.substring(c.address.length - 4)) : 'Anonymous')
+          const displayUser = prof?.name || c.authorName || c.author?.name || c.user || (c.address ? (c.address.substring(0, 6) + '…' + c.address.substring(c.address.length - 4)) : 'Anonymous')
           return {
             id: c.id || c.hash || `c-${i}-${Date.now()}`,
             user: displayUser,
             text: c.text || c.msg || '',
-            avatar: prof?.avatar,
-            reputation: prof?.reputation,
+            avatar: prof?.avatar || c.authorAvatar || c.author?.avatar,
+            reputation: prof?.reputation || c.authorReputation || c.author?.reputation,
             timestamp: c.timestamp
           }
         })
@@ -1701,6 +1721,9 @@ export default defineComponent({
 }
 
 .comment {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   padding: 8px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -1708,6 +1731,18 @@ export default defineComponent({
 .comment:last-child {
   border-bottom: none;
 }
+
+.comments-list { text-align: left; }
+.comment-content { flex: 1; }
+.comment-header { display: flex; align-items: center; gap: 8px; }
+.comment-author { font-weight: 600; }
+.comment-text { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; }
+
+/* Ensure comment avatar fallback matches .usericon size in comment rows */
+.comment .uploader-avatar-fallback { width: 32px; height: 32px; }
+
+/* Show date inline within comment header */
+.comment-header .comment-date { display: inline-block; margin-top: 0; }
 
 .comment-date {
   font-size: 10px;
