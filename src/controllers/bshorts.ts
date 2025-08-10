@@ -758,6 +758,8 @@ export async function getUserProfile(req: Request, res: Response): Promise<void>
  * - limit: number (default 50)
  * - offset: number (default 0)
  * - includeProfiles: boolean ("1"/"true" to enrich commenter profiles)
+ * - includeReplies: boolean ("1"/"true" to include first-level replies for each top-level comment)
+ * - repliesLimit: number (default 10, max replies to fetch per parent when includeReplies is on)
  */
 export async function getComments(req: Request, res: Response): Promise<void> {
   try {
@@ -766,6 +768,9 @@ export async function getComments(req: Request, res: Response): Promise<void> {
     const offset = Number.parseInt(String(req.query.offset ?? '0'), 10) || 0
     const includeProfiles = String(req.query.includeProfiles ?? '').toLowerCase() === '1' || String(req.query.includeProfiles ?? '').toLowerCase() === 'true'
     const debug = String(req.query.debug ?? '').toLowerCase() === '1' || String(req.query.debug ?? '').toLowerCase() === 'true'
+    const includeReplies = String(req.query.includeReplies ?? '').toLowerCase() === '1' || String(req.query.includeReplies ?? '').toLowerCase() === 'true'
+    const repliesLimitRaw = Number.parseInt(String(req.query.repliesLimit ?? '10'), 10)
+    const repliesLimit = Number.isFinite(repliesLimitRaw) && repliesLimitRaw > 0 ? Math.min(repliesLimitRaw, 50) : 10
 
     if (!hash) {
       res.status(400).json({ message: 'Missing required query parameter: hash' })
@@ -867,15 +872,90 @@ export async function getComments(req: Request, res: Response): Promise<void> {
 
     const comments = rawComments.map((c: any) => {
       const addr = c?.address || c?.useraddress || c?.user || undefined
+      const profile = c?.userprofile || c?.profile || c?.userProfile || undefined
+      const nameFromProfile = extractDisplayName(profile)
+      const avatarFromProfile = extractAvatarUrl(profile)
+      const id = c?.id || c?.hash || c?.commentid || c?.txid || undefined
+      const displayUser = nameFromProfile
+        || (typeof addr === 'string' ? `${addr.substring(0, 6)}…${addr.substring(addr.length - 4)}` : (c?.user || 'Anonymous'))
+      const reputationFromProfile = typeof profile?.reputation === 'number' ? profile.reputation : (typeof profile?.rep === 'number' ? profile.rep : undefined)
       return {
-        id: c?.id || c?.hash || c?.commentid || c?.txid || undefined,
+        id,
         address: addr,
-        user: typeof addr === 'string' ? `${addr.substring(0, 6)}…${addr.substring(addr.length - 4)}` : (c?.user || 'Anonymous'),
+        user: displayUser,
         text: extractText(c?.msg ?? c?.message ?? c?.comment ?? c?.body),
         timestamp: c?.time ? new Date(c.time * 1000).toISOString() : undefined,
+        replyCount: Number.isFinite(c?.children) ? Number(c.children) : undefined,
+        authorName: nameFromProfile,
+        authorAvatar: avatarFromProfile,
+        authorReputation: reputationFromProfile,
+        author: {
+          address: addr,
+          name: nameFromProfile,
+          avatar: avatarFromProfile,
+          reputation: reputationFromProfile,
+        },
+        replies: [] as any[],
         raw: c,
       }
     })
+
+    // Optionally fetch first-level replies for each top-level comment
+    if (includeReplies && comments.length) {
+      const pocketNetProxyInstance = await getPocketNetProxyInstance()
+      const rpcAny = pocketNetProxyInstance.rpc as any
+
+      const parentsNeedingReplies = comments
+        .filter((c: any) => (Number.isFinite(c.replyCount) ? c.replyCount > 0 : (c.raw && Number.isFinite(c.raw.children) ? c.raw.children > 0 : false)))
+        .slice(0, limit) // keep within initial page
+
+      const fetchRepliesForParent = async (parentId: string) => {
+        const attempts = [
+          () => rpcAny.getcomments([String(hash), String(parentId), ""]),
+          () => rpcAny.getcomments([String(hash), String(parentId)]),
+          () => rpcAny.getcomments({ postid: String(hash), parentid: String(parentId) }),
+        ]
+        for (const attempt of attempts) {
+          try {
+            const r = await attempt()
+            const arr = Array.isArray(r) ? r : (r?.comments || r?.data?.comments || r?.result?.comments || [])
+            if (Array.isArray(arr)) return arr
+          } catch {}
+        }
+        return []
+      }
+
+      await Promise.all(parentsNeedingReplies.map(async (pc) => {
+        const rawReplies = await fetchRepliesForParent(pc.id)
+        const mapped = rawReplies.slice(0, repliesLimit).map((rc: any) => {
+          const rAddr = rc?.address || rc?.useraddress || rc?.user || undefined
+          const rProf = rc?.userprofile || rc?.profile || rc?.userProfile || undefined
+          const rName = extractDisplayName(rProf)
+          const rAvatar = extractAvatarUrl(rProf)
+          const rRep = typeof rProf?.reputation === 'number' ? rProf.reputation : (typeof rProf?.rep === 'number' ? rProf.rep : undefined)
+          const rId = rc?.id || rc?.hash || rc?.commentid || rc?.txid || undefined
+          return {
+            id: rId,
+            address: rAddr,
+            user: rName || (typeof rAddr === 'string' ? `${rAddr.substring(0, 6)}…${rAddr.substring(rAddr.length - 4)}` : (rc?.user || 'Anonymous')),
+            text: extractText(rc?.msg ?? rc?.message ?? rc?.comment ?? rc?.body),
+            timestamp: rc?.time ? new Date(rc.time * 1000).toISOString() : undefined,
+            authorName: rName,
+            authorAvatar: rAvatar,
+            authorReputation: rRep,
+            author: {
+              address: rAddr,
+              name: rName,
+              avatar: rAvatar,
+              reputation: rRep,
+            },
+            replies: [] as any[],
+            raw: rc,
+          }
+        })
+        pc.replies = mapped
+      }))
+    }
 
     const result: any = {
       hash,
@@ -899,7 +979,10 @@ export async function getComments(req: Request, res: Response): Promise<void> {
     }
 
     if (includeProfiles) {
-      const addrs = Array.from(new Set(comments.map((c: any) => c.address).filter(Boolean))) as string[]
+      const addrs = Array.from(new Set([
+        ...comments.map((c: any) => c.address),
+        ...comments.flatMap((c: any) => (Array.isArray(c.replies) ? c.replies.map((r: any) => r.address) : [])),
+      ].filter(Boolean))) as string[]
       if (addrs.length) {
         const profilesMap: Record<string, any> = {}
         // Fetch in sequence to be safe
@@ -922,16 +1005,34 @@ export async function getComments(req: Request, res: Response): Promise<void> {
               return null
             })()
             if (p) {
-              profilesMap[a] = {
-                address: a,
-                name: extractDisplayName(p),
-                reputation: typeof p?.reputation === 'number' ? p.reputation : (typeof p?.rep === 'number' ? p.rep : undefined),
-                avatar: extractAvatarUrl(p),
-              }
+              const name = extractDisplayName(p)
+              const avatar = extractAvatarUrl(p)
+              const rep = typeof p?.reputation === 'number' ? p.reputation : (typeof p?.rep === 'number' ? p.rep : undefined)
+              profilesMap[a] = { address: a, name, reputation: rep, avatar }
             }
           } catch {}
         }
         result.profiles = profilesMap
+
+        // Backfill author fields on comments and replies when missing
+        const applyProfile = (obj: any) => {
+          if (!obj) return
+          const prof = profilesMap[obj.address]
+          if (!prof) return
+          obj.author = obj.author || {}
+          if (!obj.authorName && prof.name) obj.authorName = prof.name
+          if (!obj.authorAvatar && prof.avatar) obj.authorAvatar = prof.avatar
+          if (obj.authorReputation == null && typeof prof.reputation === 'number') obj.authorReputation = prof.reputation
+          if (!obj.author.name && prof.name) obj.author.name = prof.name
+          if (!obj.author.avatar && prof.avatar) obj.author.avatar = prof.avatar
+          if (obj.author.reputation == null && typeof prof.reputation === 'number') obj.author.reputation = prof.reputation
+        }
+        for (const c of comments) {
+          applyProfile(c)
+          if (Array.isArray(c.replies)) {
+            for (const r of c.replies) applyProfile(r)
+          }
+        }
       }
     }
 
