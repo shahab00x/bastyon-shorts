@@ -30,7 +30,6 @@
         <video 
           ref="videoElements"
           :src="getVideoSource(video.url)" 
-          autoplay 
           :muted="isMuted" 
           playsinline
           webkit-playsinline
@@ -89,16 +88,19 @@
                 </div>
                 <span class="uploader-name">@{{ video.uploader }}</span>
               </div>
-              <span class="video-date">
-                {{ video.formattedDate }}<template v-if="video.views != null"> · {{ formatAbbrev(video.views) }} views</template>
-              </span>
               <button class="follow-btn">Follow</button>
             </div>
             <div 
               class="video-description" 
               @click="toggleDescriptionDrawer"
             >
-              <p>{{ truncateDescription(video.description) }}</p>
+              <p>
+                {{ truncateDescription(video.description) }}
+                <span class="video-date-inline">
+                  {{ video.formattedDate }}
+                  <template v-if="video.views != null"> · {{ formatAbbrev(video.views) }} views</template>
+                </span>
+              </p>
             </div>
 
             <!-- Light blue seekbar below description & follow -->
@@ -328,6 +330,15 @@ export default defineComponent({
   computed: {
     currentVideo() {
       return this.playlist[this.currentIndex]
+    }
+  },
+  watch: {
+    currentIndex() {
+      // When the active slide changes, ensure only that slide plays
+      this.$nextTick(() => {
+        this.ensureOnlyActivePlaying();
+        this.setupHlsForIndex(this.currentIndex);
+      });
     }
   },
   methods: {
@@ -572,6 +583,30 @@ export default defineComponent({
     cacheVideoElements() {
       // Vue keeps refs updated after nextTick; no-op placeholder for clarity
     },
+    // Pause all non-active videos and play only the active one
+    ensureOnlyActivePlaying() {
+      const refs = this.$refs.videoElements;
+      if (!refs) return;
+      const list = Array.isArray(refs) ? refs : [refs];
+      for (let i = 0; i < list.length; i++) {
+        const el = list[i];
+        if (!el) continue;
+        if (i !== this.currentIndex) {
+          try { el.pause(); } catch (_) {}
+        }
+      }
+      const active = list[this.currentIndex];
+      if (active) {
+        try {
+          if (this.userWantsSound) {
+            this.isMuted = false;
+            active.muted = false;
+            active.volume = 1.0;
+          }
+          active.play().catch(() => {});
+        } catch (_) {}
+      }
+    },
     onLoadedMetadata(index) {
       const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
       if (!videoEl || isNaN(videoEl.duration)) return;
@@ -705,6 +740,7 @@ export default defineComponent({
           this.$nextTick(() => {
             this.cacheVideoElements();
             this.setupHlsForIndex(0);
+            this.ensureOnlyActivePlaying();
           });
           // Best-effort: fill missing uploader avatars/names/reps
           await this.ensureUploaderProfiles()
@@ -755,7 +791,10 @@ export default defineComponent({
         this.preloadAdjacentVideos();
         this.cleanupVideoCache();
         // Setup HLS for new index if available
-        this.$nextTick(() => this.setupHlsForIndex(this.currentIndex));
+        this.$nextTick(() => {
+          this.ensureOnlyActivePlaying();
+          this.setupHlsForIndex(this.currentIndex);
+        });
       }
     },
     prevVideo() {
@@ -765,7 +804,10 @@ export default defineComponent({
         this.preloadAdjacentVideos();
         this.cleanupVideoCache();
         // Setup HLS for new index if available
-        this.$nextTick(() => this.setupHlsForIndex(this.currentIndex));
+        this.$nextTick(() => {
+          this.ensureOnlyActivePlaying();
+          this.setupHlsForIndex(this.currentIndex);
+        });
       }
     },
     handleTouchStart(event) {
@@ -1136,45 +1178,63 @@ export default defineComponent({
       }
     },
     onVideoLoaded(index) {
-      // Initialize HLS for this slide if provided by API
-      this.setupHlsForIndex(index);
-      // existing logic continues...
-      console.log(`Video ${index} loaded`);
-      
-      // Ensure the current video plays when loaded
+      // Only initialize media pipeline for the active slide
       if (index === this.currentIndex) {
-        this.$nextTick(() => {
-          const videoElement = this.$refs.videoElements?.[index];
-          if (videoElement) {
-            // Honor user's sound preference on subsequent videos
-            if (this.userWantsSound) {
-              this.isMuted = false;
-              videoElement.muted = false;
-              videoElement.volume = 1.0;
-            }
-            videoElement.play().catch(e => console.log('Autoplay failed:', e));
-          }
-        });
+        this.setupHlsForIndex(index);
       }
+      console.log(`Video ${index} loaded`);
+      // Keep non-active slides paused
+      if (index !== this.currentIndex) {
+        const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+        if (el && !el.paused) {
+          try { el.pause(); } catch (_) {}
+        }
+        return;
+      }
+      // Play active slide if possible
+      this.$nextTick(() => {
+        const videoElement = this.$refs.videoElements?.[index];
+        if (videoElement) {
+          if (this.userWantsSound) {
+            this.isMuted = false;
+            videoElement.muted = false;
+            videoElement.volume = 1.0;
+          }
+          videoElement.play().catch(e => console.log('Autoplay failed:', e));
+        }
+      });
     },
     onVideoCanPlay(index) {
       // Handle video can play event
       console.log(`Video ${index} can play`);
     },
     onVideoPlay(index) {
+      // If a non-active slide starts playing, immediately pause it
+      if (index !== this.currentIndex) {
+        const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+        if (el) {
+          try { el.pause(); } catch (_) {}
+        }
+        return;
+      }
       console.log(`Video ${index} playing`);
       if (this.bufferingIndex === index) this.bufferingIndex = null;
       if (this.pausedOverlayIndex === index) this.pausedOverlayIndex = null;
     },
     onVideoPause(index) {
       console.log(`Video ${index} paused`);
-      this.pausedOverlayIndex = index;
+      if (index === this.currentIndex) {
+        this.pausedOverlayIndex = index;
+      }
     },
   },
   mounted() {
     this.fetchVideos();
     // Ensure first video initializes HLS if available
-    this.$nextTick(() => this.setupHlsForIndex(this.currentIndex));
+    this.$nextTick(() => {
+      this.setupHlsForIndex(this.currentIndex);
+      this.ensureOnlyActivePlaying();
+    });
   },
   beforeUnmount() {
     // Cleanup any HLS instances
@@ -1257,13 +1317,37 @@ export default defineComponent({
 .unmute-btn {
   position: absolute;
   bottom: 90px;
-  left: 16px;
+  right: 16px; /* move to right to avoid avatar overlap */
+  z-index: 1000; /* ensure clickable above overlays */
   padding: 8px 12px;
   background: rgba(0,0,0,0.6);
   color: #fff;
   border: 1px solid rgba(255,255,255,0.2);
   border-radius: 20px;
   font-size: 14px;
+}
+
+/* Align uploader row and follow button on one line to the left */
+.video-info .account-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.video-info .uploader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.video-info .follow-btn {
+  margin-left: 4px;
+}
+.video-description p {
+  margin-top: 6px;
+}
+.video-date-inline {
+  color: #bbb;
+  font-size: 12px;
+  margin-left: 8px;
 }
 
 .likes-count {
