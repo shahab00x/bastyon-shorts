@@ -2,7 +2,26 @@
  * Bastyon API service for interacting with the server-side PocketNetProxyApi
  */
 
-const API_BASE_URL = '/api';
+// Prefer an explicit backend API URL when embedded; fallback to relative '/api' for standalone
+let API_BASE_URL = '/api';
+try {
+  if (import.meta && import.meta.env && import.meta.env.VITE_API_BASE_URL) {
+    API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+  }
+} catch (_) { /* no-op */ }
+
+// Warn if running embedded but API base is not configured (likely to hit host origin instead of your backend)
+try {
+  if (typeof window !== 'undefined' && window.top !== window.self) {
+    let hasExplicitApi = false;
+    try {
+      hasExplicitApi = !!(import.meta && import.meta.env && import.meta.env.VITE_API_BASE_URL);
+    } catch (_) { /* no-op */ }
+    if (!hasExplicitApi && typeof console !== 'undefined' && console.warn) {
+      console.warn('[bastyonApi] Embedded mode detected but VITE_API_BASE_URL is not set; using relative /api which may not reach your backend.');
+    }
+  }
+} catch (_) { /* no-op */ }
 
 // Fetch playlist JSON generated on the server and served statically
 export async function fetchPlaylist(lang = 'en') {
