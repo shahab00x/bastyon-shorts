@@ -2,8 +2,7 @@
   "id": "bshorts.bastyon.ir",
   "name": "BShorts",
   "description": "Short video player for Bastyon #bshorts content",
-  "author": "PUg3fuJRCeN1nae2BnZQzW6SodDxRovNS2",
-  "scope": "bshorts.bastyon.ir",
+  "author": "PXN76kJG5sCGTwMpRfXH5oqkDzJQKNsYk4",
   "start_url": "index.html",
   "permissions": [
     "account",
