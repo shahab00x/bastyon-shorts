@@ -5,7 +5,7 @@
   "author": "Bastyon Team",
   "license": "MIT",
   "scripts": {
-    "dev": "vite --host",
+    "dev": "vite --port 3333 --host",
     "build": "vite build",
     "preview": "vite preview"
   },
