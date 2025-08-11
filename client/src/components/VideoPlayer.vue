@@ -39,7 +39,7 @@
           playsinline
           webkit-playsinline
           x5-playsinline
-          :preload="currentIndex === index ? 'metadata' : 'none'"
+          :preload="currentIndex === index ? 'auto' : 'none'"
           crossorigin="anonymous"
           :class="videoFit[index] === 'contain' ? 'fit-contain' : 'fit-cover'"
           @click="togglePlayPause($event, index)"
@@ -59,8 +59,8 @@
         </div>
 
         <!-- Pause overlay -->
-        <div v-if="pausedOverlayIndex === index" class="pause-overlay" @click.stop="togglePlayPause($event, index)">
-          ▶
+        <div v-if="pausedOverlayIndex === index" class="pause-overlay">
+          <button class="pause-play" @click.stop="togglePlayPause($event, index)" aria-label="Play">▶</button>
         </div>
 
         <!-- Unmute hint/control -->
@@ -99,7 +99,7 @@
             </div>
             <div 
               class="video-description" 
-              @click="toggleDescriptionDrawer"
+              @click.stop="toggleDescriptionDrawer"
             >
               <p>
                 {{ truncateDescription(video.description) }}
@@ -136,12 +136,12 @@
               </div>
             </div>
             
-            <div class="comments-icon" @click="toggleCommentsDrawer">
+            <div class="comments-icon" @click.stop="toggleCommentsDrawer">
               💬
               <span class="comments-badge">{{ video.comments || 0 }}</span>
             </div>
             
-            <div class="share-btn" @click="shareVideo">
+            <div class="share-btn" @click.stop="shareVideo">
               🔗
             </div>
           </div>
@@ -308,10 +308,12 @@
           </div>
           <div class="donate-row">
             <span class="donate-label">Donate</span>
-            <button :class="['donate-chip', { active: selectedDonate === 1 }]" @click="selectDonate(1)" aria-label="Donate 1 pkoin">🪙 1</button>
-            <button :class="['donate-chip', { active: selectedDonate === 2 }]" @click="selectDonate(2)" aria-label="Donate 2 pkoins">🪙 2</button>
-            <button :class="['donate-chip', { active: selectedDonate === 5 }]" @click="selectDonate(5)" aria-label="Donate 5 pkoins">🪙 5</button>
-            <button :class="['donate-chip', 'custom', { active: selectedDonate === 'custom' }]" @click="selectCustomDonate" aria-label="Donate custom amount">Custom amount</button>
+            <div class="donate-row" ref="donateRow">
+              <button v-if="showDonate1" :class="['donate-chip', { active: selectedDonate === 1 }]" @click="selectDonate(1)" aria-label="Donate 1 pkoin">🪙 1</button>
+              <button v-if="showDonate2" :class="['donate-chip', { active: selectedDonate === 2 }]" @click="selectDonate(2)" aria-label="Donate 2 pkoins">🪙 2</button>
+              <button v-if="showDonate5" :class="['donate-chip', { active: selectedDonate === 5 }]" @click="selectDonate(5)" aria-label="Donate 5 pkoins">🪙 5</button>
+              <button :class="['donate-chip', 'custom', { active: selectedDonate === 'custom' }]" @click="selectCustomDonate" aria-label="Donate custom amount">Custom amount</button>
+            </div>
           </div>
         </div>
       </div>
@@ -380,6 +382,10 @@ export default defineComponent({
       showSettingsMenu: false,
       newComment: '',
       selectedDonate: null as any,
+      // responsive donate chips visibility
+      showDonate1: true,
+      showDonate2: true,
+      showDonate5: true,
       touchStartY: 0,
       touchStartX: 0,
       touchStartTime: 0,
@@ -411,6 +417,9 @@ export default defineComponent({
       ,
       // Keep track of HLS instances per slide index
       hlsPlayers: new Map()
+      ,
+      // Track whether we already tried static fallback for a given index
+      hlsFallbackTried: new Set()
       ,
       // audio state
       isMuted: true,
@@ -576,6 +585,14 @@ export default defineComponent({
     markAvatarError(index: number) {
       this.avatarError[index] = true
     },
+    // Some flows expect this to exist; keep it safe/no-op so it doesn't block HLS setup
+    cacheVideoElements() {
+      try {
+        // $refs.videoElements is already available post-mount; no caching needed.
+        // This method exists to avoid runtime errors from previous references.
+        const _ = this.$refs.videoElements;
+      } catch (_) {}
+    },
     // Dedupe videos by their unique hash/id/txid while preserving order
     dedupeByHash(list) {
       const seen = new Set()
@@ -599,7 +616,8 @@ export default defineComponent({
           if (parts.length >= 2) {
             const hostName = parts[0];
             const videoId = parts[1];
-            return `https://${hostName}/download/streaming-playlists/hls/videos/${videoId}-360-fragmented.mp4`;
+            // Use HLS master playlist for PeerTube
+            return `https://${hostName}/download/streaming-playlists/hls/${videoId}/master.m3u8`;
           }
         }
         return decoded;
@@ -612,7 +630,10 @@ export default defineComponent({
     shouldUseHlsJs(index, video) {
       try {
         const v = video || this.playlist?.[index];
-        const hlsUrl = v?.videoInfo?.peertube?.hlsUrl;
+        const urlStr = String(v?.url || '');
+        const isPeerTube = urlStr.startsWith('peertube://');
+        const derivedHls = isPeerTube ? this.getVideoSource(urlStr) : null;
+        const hlsUrl = v?.videoInfo?.peertube?.hlsUrl || derivedHls;
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         const nativeHls = el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl');
         return !!(hlsUrl && typeof Hls !== 'undefined' && Hls && Hls.isSupported() && !nativeHls);
@@ -623,15 +644,22 @@ export default defineComponent({
       try {
         const v = video || this.playlist?.[index];
         if (!v) return '';
+        const urlStr = String(v.url || '');
+        const isPeerTube = urlStr.startsWith('peertube://');
         const hlsUrl = v?.videoInfo?.peertube?.hlsUrl;
+        const derivedHls = isPeerTube ? this.getVideoSource(urlStr) : null;
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         // If we'll use hls.js, do not bind a src so hls can take over cleanly
-        if (this.shouldUseHlsJs(index, v)) return '';
-        if (hlsUrl && el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl')) {
-          return hlsUrl;
+        if ((hlsUrl || derivedHls) && this.shouldUseHlsJs(index, v)) return '';
+        // Native HLS (Safari/iOS)
+        if ((hlsUrl || derivedHls) && el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl')) {
+          return hlsUrl || derivedHls;
         }
+        // Avoid converting PeerTube to fragmented MP4 due to CORS/CORB; require HLS
+        if (isPeerTube) return '';
+        // For non-PeerTube URLs, allow direct
         return this.getVideoSource(v.url);
-      } catch (_) { return this.getVideoSource(video?.url); }
+      } catch (_) { return ''; }
     },
     async addComment() {
       try {
@@ -667,11 +695,97 @@ export default defineComponent({
         alert('Donation failed')
       }
     },
+    // Donation chip handlers
+    selectDonate(amount) {
+      this.selectedDonate = amount;
+    },
+    selectCustomDonate() {
+      this.selectedDonate = 'custom';
+      // You can open a numeric input/modal here in the future
+    },
+    // Open/close drawers
+    toggleCommentsDrawer() {
+      this.showCommentsDrawer = !this.showCommentsDrawer;
+      if (this.showCommentsDrawer) {
+        this.$nextTick(() => this.adjustDonateChips());
+      }
+    },
+    toggleDescriptionDrawer() {
+      this.showDescriptionDrawer = !this.showDescriptionDrawer;
+      if (this.showDescriptionDrawer) {
+        this.$nextTick(() => this.adjustDonateChips());
+      }
+    },
+    closeAnyDrawer() {
+      this.showCommentsDrawer = false;
+      this.showDescriptionDrawer = false;
+    },
+    // Keep donate chips to a single line by hiding smallest amounts first
+    adjustDonateChips() {
+      this.$nextTick(() => {
+        const row = this.$refs.donateRow as HTMLElement | undefined;
+        if (!row) return;
+        // reset all suggested chips to visible
+        this.showDonate1 = true;
+        this.showDonate2 = true;
+        this.showDonate5 = true;
+        const shrinkUntilFits = () => {
+          // If contents overflow to multiple lines, hide chips in order 1 -> 2 -> 5
+          const overflows = row.scrollHeight > row.clientHeight || row.scrollWidth > row.clientWidth;
+          if (!overflows) return;
+          if (this.showDonate1) { this.showDonate1 = false; this.$nextTick(shrinkUntilFits); return; }
+          if (this.showDonate2) { this.showDonate2 = false; this.$nextTick(shrinkUntilFits); return; }
+          if (this.showDonate5) { this.showDonate5 = false; this.$nextTick(shrinkUntilFits); return; }
+        };
+        this.$nextTick(shrinkUntilFits);
+      });
+    },
+    // Alias for existing addComment method used by the template button
+    submitComment() {
+      if (typeof this.addComment === 'function') return this.addComment();
+      if (typeof this.addCommentLegacy === 'function') return this.addCommentLegacy();
+    },
+    // Basic playback UI updaters
+    onTimeUpdate(index) {
+      try {
+        const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+        if (!el) return;
+        const t = Number(el.currentTime) || 0;
+        const d = Number(this.durations[index] || el.duration) || 0;
+        this.currentTimes[index] = t;
+        if (d > 0) this.progressPercents[index] = Math.max(0, Math.min(100, (t / d) * 100));
+      } catch (_) {}
+    },
+    onProgressUpdate(index) {
+      try {
+        const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+        if (!el || !el.buffered || !el.duration) return;
+        let bufferedEnd = 0;
+        for (let i = 0; i < el.buffered.length; i++) {
+          bufferedEnd = Math.max(bufferedEnd, el.buffered.end(i));
+        }
+        const d = Number(el.duration) || 0;
+        if (d > 0) this.bufferedPercents[index] = Math.max(0, Math.min(100, (bufferedEnd / d) * 100));
+      } catch (_) {}
+    },
+    nextVideo() {
+      try {
+        if (!Array.isArray(this.playlist) || !this.playlist.length) return;
+        const next = (this.currentIndex + 1) % this.playlist.length;
+        this.currentIndex = next;
+      } catch (_) {}
+    },
     // Setup HLS for a particular video index if supported and hlsUrl is present
     setupHlsForIndex(index) {
       const video = this.playlist[index];
       if (!video) return;
-      const hlsUrl = video?.videoInfo?.peertube?.hlsUrl;
+      const urlStr = String(video?.url || '');
+      const derivedHls = urlStr.startsWith('peertube://') ? this.getVideoSource(urlStr) : null;
+      const hlsUrl = video?.videoInfo?.peertube?.hlsUrl || derivedHls;
+      // Compute static fallback if server prefers /download path
+      const staticFallback = (hlsUrl && hlsUrl.includes('/download/streaming-playlists/hls/'))
+        ? hlsUrl.replace('/download/streaming-playlists/hls/', '/static/streaming-playlists/hls/')
+        : null;
       if (!hlsUrl) return;
 
       const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
@@ -680,32 +794,49 @@ export default defineComponent({
       if (this.hlsPlayers.has(index)) return;
 
       if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-        videoEl.src = hlsUrl;
-        // On Safari (native HLS), wait for canplay then play
-        const onCanPlay = () => {
-          try {
-            if (this.userWantsSound) {
-              this.isMuted = false;
-              videoEl.muted = false;
-              videoEl.volume = 1.0;
-            }
-            if (!this.userWantsSound) {
-              // Ensure autoplay policy passes
-              this.isMuted = true;
-              videoEl.muted = true;
-            }
-            videoEl.play().catch(() => {});
-          } catch (_) {}
-          videoEl.removeEventListener('canplay', onCanPlay);
-        };
-        videoEl.addEventListener('canplay', onCanPlay);
-        return;
-      }
+        try {
+          // Ensure inline playback behavior on iOS Safari
+          videoEl.setAttribute('playsinline','');
+          videoEl.muted = !this.userWantsSound;
+          if (!this.userWantsSound) this.isMuted = true;
+        } catch (_) {}
+        // Do not reassign src here; template already binds src via resolvedSrc()
+          // On Safari (native HLS), wait for canplay then play
+          const onCanPlay = () => {
+            try {
+              if (this.userWantsSound) {
+                this.isMuted = false;
+                videoEl.muted = false;
+                videoEl.volume = 1.0;
+              }
+              if (!this.userWantsSound) {
+                // Ensure autoplay policy passes
+                this.isMuted = true;
+                videoEl.muted = true;
+              }
+              videoEl.play().catch(() => {});
+            } catch (_) {}
+            videoEl.removeEventListener('canplay', onCanPlay);
+          };
+          videoEl.addEventListener('canplay', onCanPlay);
+          // Native HLS error fallback to /static if available
+          const onError = () => {
+            try {
+              if (!staticFallback) return;
+              if (this.hlsFallbackTried.has(index)) return;
+              this.hlsFallbackTried.add(index);
+              videoEl.src = staticFallback;
+              try { videoEl.load(); } catch (_) {}
+              videoEl.play().catch(() => {});
+            } catch (_) {}
+            videoEl.removeEventListener('error', onError);
+          };
+          videoEl.addEventListener('error', onError);
+          return;
+        }
 
       if (Hls && Hls.isSupported()) {
         const hls = new Hls({ lowLatencyMode: true, backBufferLength: 60 });
-        hls.loadSource(hlsUrl)
-        hls.attachMedia(videoEl)
         this.hlsPlayers.set(index, hls)
 
         const tryPlay = () => {
@@ -724,40 +855,41 @@ export default defineComponent({
           } catch (_) {}
         };
 
+        // Ensure correct attributes for mobile Chromium
+        try {
+          videoEl.setAttribute('playsinline','');
+          videoEl.muted = !this.userWantsSound;
+          if (!this.userWantsSound) this.isMuted = true;
+        } catch (_) {}
+
         hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-          // Media attached, wait for manifest then try play
+          // After media is attached, load the source to avoid race conditions in some Chromium builds
+          try { hls.loadSource(hlsUrl); } catch (_) {}
         });
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           tryPlay();
         });
         hls.on(Hls.Events.ERROR, (event, data) => {
+          // If manifest load returns 404 and we have a static fallback, try it once
+          const isManifest404 = (data?.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR && Number(data?.response?.code) === 404)
+                                || (data?.response && Number(data.response.code) === 404);
+          if (staticFallback && isManifest404 && !this.hlsFallbackTried.has(index)) {
+            this.hlsFallbackTried.add(index);
+            try { hls.loadSource(staticFallback); } catch (_) {}
+            return;
+          }
           if (data?.fatal) {
             try { hls.destroy(); } catch (_) {}
             this.hlsPlayers.delete(index);
-            // Fallback to progressive MP4 if HLS fails (helps on some mobile/LAN setups)
-            try {
-              const fallback = this.getVideoSource(video?.url);
-              if (fallback) {
-                videoEl.src = fallback;
-                videoEl.load();
-                const onCanPlay = () => {
-                  try {
-                    if (this.userWantsSound) {
-                      this.isMuted = false;
-                      videoEl.muted = false;
-                      videoEl.volume = 1.0;
-                    }
-                    videoEl.play().catch(() => {});
-                  } catch (_) {}
-                  videoEl.removeEventListener('canplay', onCanPlay);
-                };
-                videoEl.addEventListener('canplay', onCanPlay);
-              }
-            } catch (_) {}
+            // Do not fallback to cross-origin MP4 to avoid CORB/CORS issues
+            if (this.bufferingIndex === index) this.bufferingIndex = null;
           }
         });
         hls.on(Hls.Events.BUFFER_STALLED, () => { this.bufferingIndex = index; });
         hls.on(Hls.Events.BUFFER_APPENDED, () => { if (this.bufferingIndex === index) this.bufferingIndex = null; });
+
+        // Attach last so MEDIA_ATTACHED fires and loadSource begins
+        hls.attachMedia(videoEl)
       }
     },
     // Toggle play/pause on tap
@@ -798,6 +930,25 @@ export default defineComponent({
         try { inst.destroy(); } catch (_) {}
         this.hlsPlayers.delete(idx);
       }
+    },
+    // Ensure only the active slide's video is playing; pause and detach others to prevent flicker
+    ensureOnlyActivePlaying() {
+      try {
+        const refs = this.$refs.videoElements;
+        const list = Array.isArray(refs) ? refs : (refs ? [refs] : []);
+        list.forEach((el, idx) => {
+          if (!el) return;
+          if (idx !== this.currentIndex) {
+            try { el.pause(); } catch (_) {}
+            // If not using HLS on this element, clear src to stop network
+            if (!this.hlsPlayers.has(idx)) {
+              try { el.removeAttribute('src'); el.load(); } catch (_) {}
+            }
+            // Detach any HLS instance
+            this.destroyHlsForIndex(idx);
+          }
+        });
+      } catch (_) {}
     },
     // Unmute current video after user gesture and remember preference
     unmuteCurrentVideo(index) {
@@ -885,6 +1036,7 @@ export default defineComponent({
     // Recompute fit on viewport resize
     onWindowResize() {
       this.updateVideoFitForIndex(this.currentIndex);
+      this.adjustDonateChips();
     },
     // Ensure refs are captured safely
     cacheVideoElements() {
@@ -910,7 +1062,14 @@ export default defineComponent({
             active.muted = false;
             active.volume = 1.0;
           }
-          active.play().catch(() => {});
+          // Only initiate autoplay when:
+          // - autoplay setting is on
+          // - Hls.js is not managing this media element
+          // - media is sufficiently buffered (readyState >= 3)
+          const hlsManaged = this.hlsPlayers && this.hlsPlayers.has(this.currentIndex);
+          if (this.settings?.autoplay && !hlsManaged && Number(active.readyState) >= 3) {
+            active.play().catch(() => {});
+          }
         } catch (_) {}
       }
     },
@@ -976,18 +1135,48 @@ export default defineComponent({
       const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
       const dur = this.durations[index] || videoEl?.duration || 0;
       if (videoEl && dur && isFinite(dur)) {
-        try { videoEl.currentTime = frac * dur; } catch (_) {}
+        const target = frac * dur;
+        const safeTarget = this._clampSeekable(videoEl, target);
+        try { videoEl.currentTime = safeTarget; } catch (_) {}
         const pct = frac * 100;
         this.progressPercents[index] = pct;
       }
     },
     onSeekEnd(index) {
       this.seekingIndex = null;
+      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
+      if (videoEl) {
+        try {
+          const dur = Number(this.durations[index] || videoEl.duration) || 0;
+          if (dur > 0) {
+            const safe = this._clampSeekable(videoEl, Number(videoEl.currentTime) || 0);
+            if (typeof videoEl.fastSeek === 'function') {
+              try { videoEl.fastSeek(safe); } catch (_) {}
+            } else {
+              try { videoEl.currentTime = safe; } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
     },
     _eventClientX(e) {
       if (e.touches && e.touches.length) return e.touches[0].clientX;
       if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0].clientX;
       return e.clientX;
+    },
+    _clampSeekable(videoEl, t) {
+      try {
+        const s = videoEl.seekable;
+        if (!s || !s.length) return t;
+        // Use the union of seekable ranges, clamp to overall [start, end]
+        const start = s.start(0);
+        const end = s.end(s.length - 1);
+        // Small epsilon to avoid edges causing resets on iOS
+        const eps = 0.01;
+        return Math.max(start + eps, Math.min(end - eps, t));
+      } catch (_) {
+        return t;
+      }
     },
     async fetchVideos() {
       // Set loading state
@@ -1126,8 +1315,8 @@ export default defineComponent({
         this.cleanupVideoCache();
         // Setup HLS for new index if available
         this.$nextTick(() => {
-          this.ensureOnlyActivePlaying();
           this.setupHlsForIndex(this.currentIndex);
+          this.ensureOnlyActivePlaying();
         });
       }
     },
@@ -1139,8 +1328,8 @@ export default defineComponent({
         this.cleanupVideoCache();
         // Setup HLS for new index if available
         this.$nextTick(() => {
-          this.ensureOnlyActivePlaying();
           this.setupHlsForIndex(this.currentIndex);
+          this.ensureOnlyActivePlaying();
         });
       }
     },
@@ -1735,12 +1924,7 @@ export default defineComponent({
       }
     },
     onVideoLoaded(index) {
-      // Only initialize media pipeline for the active slide
-      if (index === this.currentIndex) {
-        this.setupHlsForIndex(index);
-      }
-      console.log(`Video ${index} loaded`);
-      // Keep non-active slides paused
+      // Keep non-active slides paused; no autoplay here to avoid races
       if (index !== this.currentIndex) {
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         if (el && !el.paused) {
@@ -1748,18 +1932,9 @@ export default defineComponent({
         }
         return;
       }
-      // Play active slide if possible
-      this.$nextTick(() => {
-        const videoElement = this.$refs.videoElements?.[index];
-        if (videoElement) {
-          if (this.userWantsSound) {
-            this.isMuted = false;
-            videoElement.muted = false;
-            videoElement.volume = 1.0;
-          }
-          videoElement.play().catch(e => console.log('Autoplay failed:', e));
-        }
-      });
+      // Active slide: let canplay/Hls events drive play to avoid aborts
+      if (this.bufferingIndex === index) this.bufferingIndex = null;
+      console.log(`Video ${index} loaded`);
     },
     onVideoCanPlay(index) {
       // Handle video can play event
@@ -1794,6 +1969,8 @@ export default defineComponent({
       this.ensureOnlyActivePlaying();
       // Compute initial fit for current video
       this.updateVideoFitForIndex(this.currentIndex);
+      // And adjust donate chips after initial layout
+      this.adjustDonateChips();
     });
     // Listen to resize to recompute fit
     try {
@@ -1954,6 +2131,55 @@ export default defineComponent({
   font-size: 14px;
 }
 
+/* Pause overlay centered play icon */
+.pause-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 84px;
+  line-height: 1;
+  color: rgba(255,255,255,0.92);
+  text-shadow: 0 2px 12px rgba(0,0,0,0.6);
+  z-index: 900; /* above video, below unmute/button UI */
+  pointer-events: none; /* let underlying UI be clickable */
+}
+
+.pause-play {
+  pointer-events: auto; /* clickable play button */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.35);
+  color: #fff;
+  font-size: 60px;
+  line-height: 1;
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+}
+
+/* Buffering overlay and spinner */
+.buffering-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 800;
+}
+.spinner {
+  width: 44px;
+  height: 44px;
+  border: 4px solid rgba(255,255,255,0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
 /* Align uploader row and follow button on one line to the left */
 .video-info .account-info {
   display: flex;
@@ -2069,6 +2295,7 @@ export default defineComponent({
   bottom: 0;
   left: 0;
   right: 0;
+  z-index: 950;
   padding: 16px;
 }
 
@@ -2099,7 +2326,7 @@ export default defineComponent({
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 5;
+  z-index: 950;
   background: rgba(0,0,0,0.35);
   color: #fff;
   border: none;
@@ -2215,6 +2442,7 @@ export default defineComponent({
   display: flex;
   flex-direction: column;
   align-items: center;
+  z-index: 950;
   pointer-events: auto;
 }
 

@@ -207,11 +207,42 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
       const topAuthorName = item.author_name
       const topAuthorAvatar = item.author_avatar
       const topAuthorRep = item.author_reputation
+      // Prefer HLS playlist from PeerTube API (streamingPlaylists[].playlistUrl)
+      const streamingPlaylists = (item?.peertube?.streamingPlaylists && Array.isArray(item.peertube.streamingPlaylists))
+        ? item.peertube.streamingPlaylists
+        : []
+      const hlsFromApi = (() => {
+        try {
+          // type: 1 indicates HLS in PeerTube
+          const hlsEntry = streamingPlaylists.find((p: any) => Number(p?.type) === 1) || streamingPlaylists[0]
+          const url = hlsEntry?.playlistUrl
+          return typeof url === 'string' && url.startsWith('http') ? url : undefined
+        } catch { return undefined }
+      })()
+
+      // Derive PeerTube HLS master playlist URL only if API doesn't provide it
+      const peertubeUrl: string = String(item.video_url || '')
+      let derivedHls: string | undefined
+      if (!hlsFromApi) {
+        try {
+          const parsed = parsePeerTubeUrl(peertubeUrl)
+          if (parsed && parsed.host && parsed.id) {
+            derivedHls = `https://${parsed.host}/download/streaming-playlists/hls/${parsed.id}/master.m3u8`
+          }
+        } catch {}
+      }
+
+      // Normalize peertube info
+      const peertubeInfo = {
+        ...(item.peertube || {}),
+        hlsUrl: (item.peertube && item.peertube.hlsUrl) ? item.peertube.hlsUrl : (hlsFromApi || derivedHls)
+      }
+
       return {
         id: item.video_hash,
         hash: item.video_hash,
         txid: item.video_hash,
-        url: item.video_url, // keep peertube:// URL; client converts to direct MP4
+        url: item.video_url, // keep peertube:// URL; client prefers HLS playlist
         resolutions: [] as any[],
         uploader: topAuthorName || author?.name || author?.nickname || author?.nick || item?.author?.address || item.author_address || 'Unknown',
         uploaderAddress: item.author_address,
@@ -232,7 +263,7 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         tags,
         language: item.language,
         hasVideo: !!item.video_url,
-        videoInfo: { peertube: item.peertube },
+        videoInfo: { peertube: peertubeInfo },
         rawPost: item,
         // Optional extra fields
         bastyonPostLink: item.bastyon_post_link,
