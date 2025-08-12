@@ -705,12 +705,6 @@ export default defineComponent({
       // You can open a numeric input/modal here in the future
     },
     // Open/close drawers
-    toggleCommentsDrawer() {
-      this.showCommentsDrawer = !this.showCommentsDrawer;
-      if (this.showCommentsDrawer) {
-        this.$nextTick(() => this.adjustDonateChips());
-      }
-    },
     toggleDescriptionDrawer() {
       this.showDescriptionDrawer = !this.showDescriptionDrawer;
       if (this.showDescriptionDrawer) {
@@ -1006,20 +1000,6 @@ export default defineComponent({
       }
     },
     // Loaded data/canplay/play/pause handlers to manage UI state safely
-    onVideoLoaded(index) {
-      if (this.bufferingIndex === index) this.bufferingIndex = null;
-    },
-    onVideoCanPlay(index) {
-      if (this.bufferingIndex === index) this.bufferingIndex = null;
-    },
-    onVideoPlay(index) {
-      this.isVideoPlaying = true;
-      if (this.pausedOverlayIndex === index) this.pausedOverlayIndex = null;
-    },
-    onVideoPause(index) {
-      this.isVideoPlaying = false;
-      if (this.currentIndex === index) this.pausedOverlayIndex = index;
-    },
     // removed duplicate ensureOnlyActivePlaying (keeping earlier version)
     // Recompute fit on viewport resize
     onWindowResize() {
@@ -1610,26 +1590,8 @@ export default defineComponent({
       console.log('Reply to:', comment)
       alert('Reply composer coming soon')
     },
-    submitComment() {
-      const text = (this.newComment || '').trim();
-      if (!text) return;
-      // Placeholder: integrate with Bastyon API when ready
-      console.log('Submit comment:', text);
-      alert('Comment posting coming soon');
-      this.newComment = '';
-    },
-    selectDonate(amount) {
-      this.selectedDonate = amount;
-      console.log('Selected donate amount:', amount);
-    },
-    selectCustomDonate() {
-      this.selectedDonate = 'custom';
-      const v = typeof window !== 'undefined' ? window.prompt('Enter custom amount of pkoins:') : null;
-      const n = Number(v);
-      if (v != null && Number.isFinite(n) && n > 0) {
-        this.selectedDonate = n;
-      }
-    },
+    
+    
     async toggleCommentsDrawer() {
       const opening = !this.showCommentsDrawer
       this.showCommentsDrawer = opening;
