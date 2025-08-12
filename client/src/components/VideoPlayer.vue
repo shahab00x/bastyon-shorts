@@ -652,6 +652,9 @@ export default defineComponent({
           || v?.videoInfo?.peertube?.hlsUrl
           || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
           || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
+        const directCandidate = v?.directUrl
+          || v?.videoInfo?.peertube?.directUrl
+          || null;
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         // If we'll use hls.js, do not bind a src so hls can take over cleanly
         if (hlsCandidate && this.shouldUseHlsJs(index, v)) return '';
@@ -659,8 +662,8 @@ export default defineComponent({
         if (hlsCandidate && el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl')) {
           return hlsCandidate;
         }
-        // Default to direct source (covers PeerTube fragmented MP4)
-        return derived;
+        // Default to direct source (prefer PeerTube fragmented MP4 fallback if provided)
+        return directCandidate || derived;
       } catch (_) { return ''; }
     },
     async addComment() {
@@ -1399,7 +1402,13 @@ export default defineComponent({
       if (index >= 0 && index < this.playlist.length && !this.videoCache.has(index)) {
         const video = this.playlist[index];
         const videoElement = document.createElement('video');
-        videoElement.src = this.getVideoSource(video.url);
+        try { videoElement.setAttribute('crossorigin','anonymous'); videoElement.crossOrigin = 'anonymous'; } catch {}
+        // Use same resolution logic as playback, but ensure a concrete src for preloading
+        let src = this.resolvedSrc(index, video);
+        if (!src) {
+          src = (video?.directUrl || video?.videoInfo?.peertube?.directUrl || this.getVideoSource(video.url) || '');
+        }
+        videoElement.src = src;
         videoElement.preload = 'metadata';
         
         // Add to cache
