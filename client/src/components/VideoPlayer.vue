@@ -606,7 +606,7 @@ export default defineComponent({
       }
       return out
     },
-    // Convert peertube://host/uuid to direct fragmented MP4 for reliable playback
+    // Convert peertube://host/uuid to HLS master playlist (prefer static path for correct MIME/CORS)
     getVideoSource(url) {
       try {
         if (!url) return '';
@@ -617,8 +617,8 @@ export default defineComponent({
           if (parts.length >= 2) {
             const hostName = parts[0];
             const videoId = parts[1];
-            // Use direct fragmented MP4 to avoid CORB/CORS issues with HLS in iframe
-            return `https://${hostName}/download/streaming-playlists/hls/videos/${videoId}-360-fragmented.mp4`;
+            // Prefer static HLS path to ensure correct Content-Type and CORS
+            return `https://${hostName}/static/streaming-playlists/hls/${videoId}/master.m3u8`;
           }
         }
         return decoded;
@@ -626,6 +626,17 @@ export default defineComponent({
         // Fallback to original URL on any error
         return url;
       }
+    },
+    // Normalize HLS URL to prefer /static path over /download
+    normalizeHlsUrl(u) {
+      try {
+        if (!u) return u;
+        const s = String(u);
+        if (/\.m3u8(\?|$)/.test(s) && s.includes('/download/streaming-playlists/hls/')) {
+          return s.replace('/download/streaming-playlists/hls/', '/static/streaming-playlists/hls/');
+        }
+        return s;
+      } catch (_) { return u; }
     },
     // Decide if we should use hls.js (MSE) instead of native
     shouldUseHlsJs(index, video) {
@@ -635,8 +646,11 @@ export default defineComponent({
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         const nativeHls = el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl');
         // Only use HLS if URL explicitly points to an HLS playlist and MSE is supported
-        const hlsCandidate = v?.videoInfo?.peertube?.hlsUrl
+        const derived = this.getVideoSource(urlStr);
+        const hlsCandidateRaw = v?.videoInfo?.peertube?.hlsUrl
+          || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
           || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
+        const hlsCandidate = this.normalizeHlsUrl(hlsCandidateRaw);
         return !!(hlsCandidate && typeof Hls !== 'undefined' && Hls && Hls.isSupported() && !nativeHls);
       } catch (_) { return false; }
     },
@@ -647,9 +661,10 @@ export default defineComponent({
         if (!v) return '';
         const urlStr = String(v.url || '');
         const derived = this.getVideoSource(urlStr);
-        const hlsCandidate = v?.videoInfo?.peertube?.hlsUrl
+        const hlsCandidateRaw = v?.videoInfo?.peertube?.hlsUrl
           || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
           || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
+        const hlsCandidate = this.normalizeHlsUrl(hlsCandidateRaw);
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         // If we'll use hls.js, do not bind a src so hls can take over cleanly
         if (hlsCandidate && this.shouldUseHlsJs(index, v)) return '';
@@ -781,14 +796,15 @@ export default defineComponent({
       if (!video) return;
       const urlStr = String(video?.url || '');
       const derived = this.getVideoSource(urlStr);
-      const hlsUrl = video?.videoInfo?.peertube?.hlsUrl
+      const raw = video?.videoInfo?.peertube?.hlsUrl
         || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
         || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
-      // Compute static fallback if server prefers /download path
-      const staticFallback = (hlsUrl && hlsUrl.includes('/download/streaming-playlists/hls/'))
-        ? hlsUrl.replace('/download/streaming-playlists/hls/', '/static/streaming-playlists/hls/')
-        : null;
-      if (!hlsUrl) return;
+      if (!raw) return;
+      const primary = this.normalizeHlsUrl(raw);
+      const staticFallback = primary.includes('/static/streaming-playlists/hls/')
+        ? primary.replace('/static/streaming-playlists/hls/', '/download/streaming-playlists/hls/')
+        : primary.replace('/download/streaming-playlists/hls/', '/static/streaming-playlists/hls/');
+      const hlsUrl = primary;
 
       const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
       if (!videoEl) return;
@@ -838,7 +854,12 @@ export default defineComponent({
         }
 
       if (Hls && Hls.isSupported()) {
-        const hls = new Hls({ lowLatencyMode: true, backBufferLength: 60 });
+        const hls = new Hls({
+          lowLatencyMode: true,
+          backBufferLength: 60,
+          // Avoid credentialed XHR for cross-origin playlists/segments
+          xhrSetup: (xhr) => { try { xhr.withCredentials = false; } catch (_) {} }
+        });
         this.hlsPlayers.set(index, hls)
 
         const tryPlay = () => {
