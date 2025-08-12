@@ -190,6 +190,8 @@ export async function fetchPlaylist(lang = 'en') {
 // Fetch all videos with duration < 2 minutes
 export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
   if (isApiDisabled()) return [];
+  
+  // First, try to fetch from the API server
   try {
     await ensureApiBaseInitialized();
     const params = new URLSearchParams();
@@ -198,20 +200,56 @@ export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
     if (offset != null) params.set('offset', String(offset));
     const qs = params.toString();
     const url = `${API_BASE_URL}/videos/bshorts${qs ? `?${qs}` : ''}`;
-    const response = await fetch(url, mergeFetchOptions());
     
-    if (!response.ok) {
-      try { safeWarn('[bastyonApi] BShorts fetch failed:', response.status, 'url:', url); } catch (_) {}
-      return [];
+    // Add timeout to detect server unavailability quickly
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+    
+    const response = await fetch(url, mergeFetchOptions({ signal: controller.signal }));
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const data = await response.json();
+      return Array.isArray(data) ? data : (data.data || []);
     }
     
-    const data = await response.json();
-    // Server returns an array of videos directly
-    return Array.isArray(data) ? data : (data.data || []);
+    // If server responds with 502 or 500, it's likely the playlist server isn't running
+    if (response.status >= 500) {
+      safeWarn('[bastyonApi] Playlist server appears to be down, falling back to cached JSON');
+    }
   } catch (error) {
-    try { safeWarn('Error fetching short videos (non-fatal):', error); } catch (_) {}
-    return [];
+    // Network error, timeout, or server unreachable - fall back to cached JSON
+    safeWarn('[bastyonApi] API server unavailable, falling back to cached playlists:', error.message);
   }
+  
+  // Fallback to cached JSON files in playlists folder
+  try {
+    // Try to load from cached playlists folder
+    const cachedUrl = `/playlists/${encodeURIComponent(lang)}/latest.json`;
+    const cachedResponse = await fetch(cachedUrl, mergeFetchOptions({
+      cache: 'force-cache', // Use cached version
+      signal: undefined // Remove timeout for cached files
+    }));
+    
+    if (cachedResponse.ok) {
+      const data = await cachedResponse.json();
+      const videos = Array.isArray(data) ? data : (data.data || []);
+      
+      // Apply limit/offset if provided
+      if (offset != null || limit != null) {
+        const start = offset || 0;
+        const end = limit ? start + limit : undefined;
+        return videos.slice(start, end);
+      }
+      
+      return videos;
+    }
+  } catch (fallbackError) {
+    safeWarn('[bastyonApi] Fallback to cached playlists also failed:', fallbackError.message);
+  }
+  
+  // Return empty array if both API and cached files fail
+  return [];
 }
 
 // Fetch a single user profile by address
