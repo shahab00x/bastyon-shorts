@@ -137,13 +137,14 @@ export async function fetchPlaylist(lang = 'en') {
       cache: 'no-store'
     }));
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      try { console.warn('[bastyonApi] Playlist fetch failed:', response.status); } catch (_) {}
+      return [];
     }
     const data = await response.json();
     return Array.isArray(data) ? data : (data?.items || []);
   } catch (error) {
-    console.error('Error fetching playlist JSON:', error);
-    throw error;
+    try { console.warn('Error fetching playlist JSON:', error); } catch (_) {}
+    return [];
   }
 }
 
@@ -160,15 +161,16 @@ export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
     const response = await fetch(url, mergeFetchOptions());
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      try { console.warn('[bastyonApi] BShorts fetch failed:', response.status, 'url:', url); } catch (_) {}
+      return [];
     }
     
     const data = await response.json();
     // Server returns an array of videos directly
     return Array.isArray(data) ? data : (data.data || []);
   } catch (error) {
-    console.error('Error fetching short videos:', error);
-    throw error;
+    try { console.warn('Error fetching short videos (non-fatal):', error); } catch (_) {}
+    return [];
   }
 }
 
