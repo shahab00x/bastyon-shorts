@@ -40,6 +40,18 @@ function safeWarn(...args) {
   } catch (_) { /* no-op */ }
 }
 
+// Env flag to disable API calls entirely (set VITE_DISABLE_API=true or vite_disable_api=true)
+const DISABLE_API = (() => {
+  try {
+    const env = (typeof import.meta !== 'undefined' && import.meta && import.meta.env)
+      ? import.meta.env
+      : undefined;
+    const raw = ((env && (env.VITE_DISABLE_API ?? env.vite_disable_api)) || '').toString();
+    const v = raw.toLowerCase();
+    return v === '1' || v === 'true' || v === 'yes';
+  } catch (_) { return false; }
+})();
+
 // Resolve API base dynamically at runtime when embedded or when provided via URL/global.
 let apiBaseInitPromise = null;
 function readQueryParamApiBase() {
@@ -139,6 +151,7 @@ try {
 
 // Fetch playlist JSON generated on the server and served statically
 export async function fetchPlaylist(lang = 'en') {
+  if (DISABLE_API) return [];
   try {
     const response = await fetch(`/playlists/${encodeURIComponent(lang)}/latest.json`, mergeFetchOptions({
       // keep cache disabled for freshness
@@ -158,6 +171,7 @@ export async function fetchPlaylist(lang = 'en') {
 
 // Fetch all videos with duration < 2 minutes
 export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
+  if (DISABLE_API) return [];
   try {
     await ensureApiBaseInitialized();
     const params = new URLSearchParams();
