@@ -220,14 +220,15 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
         } catch { return undefined }
       })()
 
-      // Derive PeerTube HLS master playlist URL only if API doesn't provide it
+      // If API doesn't provide HLS playlist, derive a direct fragmented MP4 fallback
+      // Example: https://<host>/download/streaming-playlists/hls/videos/<videoId>-360-fragmented.mp4
       const peertubeUrl: string = String(item.video_url || '')
-      let derivedHls: string | undefined
+      let derivedDirect: string | undefined
       if (!hlsFromApi) {
         try {
           const parsed = parsePeerTubeUrl(peertubeUrl)
           if (parsed && parsed.host && parsed.id) {
-            derivedHls = `https://${parsed.host}/download/streaming-playlists/hls/${parsed.id}/master.m3u8`
+            derivedDirect = `https://${parsed.host}/download/streaming-playlists/hls/videos/${parsed.id}-360-fragmented.mp4`
           }
         } catch {}
       }
@@ -235,7 +236,8 @@ export async function getBShorts(req: Request, res: Response): Promise<void> {
       // Normalize peertube info
       const peertubeInfo = {
         ...(item.peertube || {}),
-        hlsUrl: (item.peertube && item.peertube.hlsUrl) ? item.peertube.hlsUrl : (hlsFromApi || derivedHls)
+        hlsUrl: (item.peertube && item.peertube.hlsUrl) ? item.peertube.hlsUrl : (hlsFromApi || undefined),
+        directUrl: (item.peertube && item.peertube.directUrl) ? item.peertube.directUrl : derivedDirect
       }
 
       return {

@@ -1107,6 +1107,17 @@ export default defineComponent({
         return t;
       }
     },
+    // Notify the embedding host that the miniapp is ready/loaded
+    notifyHost(stage = 'ready', extra = {}) {
+      try {
+        if (stage === 'ready' && this._hostReadySent) return;
+        const readyPayload = { app: 'bshorts', type: 'ready', stage, ...extra };
+        const loadedPayload = { app: 'bshorts', action: 'loaded', stage, ...extra };
+        try { window.parent && window.parent.postMessage(readyPayload, '*'); } catch (_) {}
+        try { window.parent && window.parent.postMessage(loadedPayload, '*'); } catch (_) {}
+        if (stage === 'ready') this._hostReadySent = true;
+      } catch (_) {}
+    },
     async fetchVideos() {
       // Set loading state
       this.loading = true;
@@ -1195,6 +1206,8 @@ export default defineComponent({
         }
         // Initialize video cache
         this.initializeVideoCache();
+        // Signal readiness to the host (normal success path)
+        this.notifyHost('ready', { source: 'fetchVideos:success' });
         // Hide error overlay if we have fallback content
         this.error = null;
       } catch (error) {
@@ -1229,11 +1242,15 @@ export default defineComponent({
         ];
         // Initialize video cache
         this.initializeVideoCache();
+        // Signal readiness to the host (error fallback path)
+        this.notifyHost('ready', { source: 'fetchVideos:error-fallback' });
         // Hide error overlay since we show fallback content
         this.error = null;
       } finally {
         // Reset loading state
         this.loading = false;
+        // Ensure host is notified even if earlier paths failed to trigger
+        this.notifyHost('ready', { source: 'fetchVideos:finally' });
       }
     },
     nextVideo() {
@@ -1872,6 +1889,8 @@ export default defineComponent({
     },
   },
   mounted() {
+    // Proactively notify host as soon as we mount (redundant with fetchVideos paths)
+    this.notifyHost('ready', { source: 'mounted' });
     this.loadSettings();
     this.fetchVideos();
     // Ensure first video initializes HLS if available
@@ -1882,6 +1901,8 @@ export default defineComponent({
       this.updateVideoFitForIndex(this.currentIndex);
       // And adjust donate chips after initial layout
       this.adjustDonateChips();
+      // Fire one more time after initial layout
+      this.notifyHost('ready', { source: 'mounted:nextTick' });
     });
     // Listen to resize to recompute fit
     try {
