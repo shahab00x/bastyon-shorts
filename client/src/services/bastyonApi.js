@@ -10,6 +10,90 @@ try {
   }
 } catch (_) { /* no-op */ }
 
+// Resolve API base dynamically at runtime when embedded or when provided via URL/global.
+let apiBaseInitPromise = null;
+function readQueryParamApiBase() {
+  try {
+    if (typeof window === 'undefined') return '';
+    const sp = new URLSearchParams(window.location.search || '');
+    // support multiple aliases
+    const keys = ['apiBase', 'api_base', 'apibase', 'backend', 'baseUrl', 'baseurl'];
+    for (const k of keys) {
+      const v = sp.get(k);
+      if (v && typeof v === 'string') return decodeURIComponent(v.trim());
+    }
+  } catch (_) {}
+  return '';
+}
+function readGlobalApiBase() {
+  try {
+    if (typeof window !== 'undefined' && window.__BastyonShortsApiBase) {
+      const v = String(window.__BastyonShortsApiBase);
+      if (v) return v;
+    }
+  } catch (_) {}
+  return '';
+}
+function normalizeApiBase(v) {
+  try {
+    if (!v) return '';
+    let s = String(v).trim();
+    // strip trailing slashes
+    while (s.length > 1 && s.endsWith('/')) s = s.slice(0, -1);
+    return s;
+  } catch (_) { return ''; }
+}
+async function ensureApiBaseInitialized() {
+  // If already explicit (env or previously resolved), skip
+  if (API_BASE_URL && API_BASE_URL !== '/api') return;
+  if (apiBaseInitPromise) return apiBaseInitPromise;
+  apiBaseInitPromise = (async () => {
+    // 1) URL query param override
+    const fromQuery = normalizeApiBase(readQueryParamApiBase());
+    if (fromQuery) {
+      API_BASE_URL = fromQuery;
+      try { localStorage.setItem('bastyonApiBase', API_BASE_URL); } catch (_) {}
+      return;
+    }
+    // 2) Global window override
+    const fromGlobal = normalizeApiBase(readGlobalApiBase());
+    if (fromGlobal) {
+      API_BASE_URL = fromGlobal;
+      try { localStorage.setItem('bastyonApiBase', API_BASE_URL); } catch (_) {}
+      return;
+    }
+    // 3) Persisted value from previous runs
+    try {
+      const stored = normalizeApiBase(localStorage.getItem('bastyonApiBase'));
+      if (stored) { API_BASE_URL = stored; return; }
+    } catch (_) {}
+    // 4) If embedded, try asking the host via mini-app messaging (best-effort)
+    try {
+      if (typeof window !== 'undefined' && window.top !== window.self) {
+        const mod = await import('./miniAppMessaging.js');
+        const messenger = mod && typeof mod.createMiniAppMessenger === 'function'
+          ? mod.createMiniAppMessenger()
+          : (mod && mod.default && typeof mod.default.createMiniAppMessenger === 'function'
+            ? mod.default.createMiniAppMessenger()
+            : null);
+        if (messenger && messenger.isEmbedded) {
+          try {
+            const res = await messenger.request('bastyon:getApiBase', {});
+            const candidate = normalizeApiBase(res && (res.payload?.apiBase || res.payload?.baseUrl || res.payload));
+            if (candidate) {
+              API_BASE_URL = candidate;
+              try { localStorage.setItem('bastyonApiBase', API_BASE_URL); } catch (_) {}
+              return;
+            }
+          } catch (_) { /* ignore */ }
+        }
+      }
+    } catch (_) { /* ignore */ }
+    // 5) Fallback remains '/api'
+  })();
+  return apiBaseInitPromise;
+}
+
 // Warn if running embedded but API base is not configured (likely to hit host origin instead of your backend)
 try {
   if (typeof window !== 'undefined' && window.top !== window.self) {
@@ -43,6 +127,7 @@ export async function fetchPlaylist(lang = 'en') {
 // Fetch all videos with duration < 2 minutes
 export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
   try {
+    await ensureApiBaseInitialized();
     const params = new URLSearchParams();
     if (lang) params.set('lang', lang);
     if (limit != null) params.set('limit', String(limit));
@@ -67,6 +152,7 @@ export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
 // Fetch a single user profile by address
 export async function fetchProfile(address) {
   if (!address) throw new Error('address is required');
+  await ensureApiBaseInitialized();
   const url = `${API_BASE_URL}/videos/profile?address=${encodeURIComponent(address)}`;
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
@@ -77,6 +163,7 @@ export async function fetchProfile(address) {
 export async function fetchProfiles(addresses) {
   const list = Array.isArray(addresses) ? addresses.filter(Boolean) : [];
   if (!list.length) throw new Error('addresses must be a non-empty array');
+  await ensureApiBaseInitialized();
   const url = `${API_BASE_URL}/videos/profile?addresses=${encodeURIComponent(list.join(','))}`;
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Profiles fetch failed: ${res.status}`);
@@ -86,6 +173,7 @@ export async function fetchProfiles(addresses) {
 // Fetch comments for a video hash/txid. If parentid is provided, fetch replies for that comment.
 export async function fetchComments(hash, { limit = 50, offset = 0, includeProfiles = true, includeReplies = false, repliesLimit = 10, parentid } = {}) {
   if (!hash) throw new Error('hash is required');
+  await ensureApiBaseInitialized();
   const params = new URLSearchParams();
   params.set('hash', hash);
   if (limit != null) params.set('limit', String(limit));
@@ -103,6 +191,7 @@ export async function fetchComments(hash, { limit = 50, offset = 0, includeProfi
 // Post a comment on a video
 export async function postComment(videoId, commentText, userAddress) {
   try {
+    await ensureApiBaseInitialized();
     const response = await fetch(`${API_BASE_URL}/videos/comment`, {
       method: 'POST',
       headers: {
@@ -126,6 +215,7 @@ export async function postComment(videoId, commentText, userAddress) {
 // Donate PKoin to a creator
 export async function donatePKoin(creatorAddress, amount, userAddress) {
   try {
+    await ensureApiBaseInitialized();
     const response = await fetch(`${API_BASE_URL}/donate`, {
       method: 'POST',
       headers: {
@@ -149,6 +239,7 @@ export async function donatePKoin(creatorAddress, amount, userAddress) {
 // Rate a video
 export async function rateVideo(videoId, rating, userAddress) {
   try {
+    await ensureApiBaseInitialized();
     const response = await fetch(`${API_BASE_URL}/videos/rate`, {
       method: 'POST',
       headers: {
@@ -172,6 +263,7 @@ export async function rateVideo(videoId, rating, userAddress) {
 // Upload a video
 export async function uploadVideo(videoData) {
   try {
+    await ensureApiBaseInitialized();
     const response = await fetch(`${API_BASE_URL}/videos/upload`, {
       method: 'POST',
       headers: {
