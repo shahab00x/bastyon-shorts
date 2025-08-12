@@ -52,6 +52,24 @@ const DISABLE_API = (() => {
   } catch (_) { return false; }
 })();
 
+// Runtime toggle to disable API calls without rebuild
+function isApiDisabled() {
+  try {
+    if (DISABLE_API) return true;
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search || '');
+      const qp = (sp.get('disableApi') || sp.get('disable_api') || '').toLowerCase();
+      if (qp === '1' || qp === 'true' || qp === 'yes') return true;
+      try {
+        const ls = (localStorage.getItem('bshorts:disableApi') || '').toLowerCase();
+        if (ls === '1' || ls === 'true' || ls === 'yes') return true;
+      } catch (_) {}
+      if (window.__BShortsDisableApi === true) return true;
+    }
+  } catch (_) { /* ignore */ }
+  return false;
+}
+
 // Resolve API base dynamically at runtime when embedded or when provided via URL/global.
 let apiBaseInitPromise = null;
 function readQueryParamApiBase() {
@@ -151,7 +169,7 @@ try {
 
 // Fetch playlist JSON generated on the server and served statically
 export async function fetchPlaylist(lang = 'en') {
-  if (DISABLE_API) return [];
+  if (isApiDisabled()) return [];
   try {
     const response = await fetch(`/playlists/${encodeURIComponent(lang)}/latest.json`, mergeFetchOptions({
       // keep cache disabled for freshness
@@ -171,7 +189,7 @@ export async function fetchPlaylist(lang = 'en') {
 
 // Fetch all videos with duration < 2 minutes
 export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
-  if (DISABLE_API) return [];
+  if (isApiDisabled()) return [];
   try {
     await ensureApiBaseInitialized();
     const params = new URLSearchParams();
