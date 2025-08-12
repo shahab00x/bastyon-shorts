@@ -128,68 +128,6 @@
     "bastyonPostLink": "https://bastyon.com/post?s=28d0f4e5615d979c17d9719834fc30aa13547c8bc9ea437336a39c373c2af8db"
   },
   {
-    "id": "d6bae28894a36b4a261b6fc611cc17bc9e4da57620118aa5e1b231d5b5207aac",
-    "hash": "d6bae28894a36b4a261b6fc611cc17bc9e4da57620118aa5e1b231d5b5207aac",
-    "txid": "d6bae28894a36b4a261b6fc611cc17bc9e4da57620118aa5e1b231d5b5207aac",
-    "url": "peertube://peertube800.pocketnet.app/e2ed8123-3250-4a9d-955b-50d3f0cdb42a",
-    "resolutions": [],
-    "uploader": "yug161ru",
-    "uploaderAddress": "P9FZbiqb2h3knUQDtHjp9cke2AwC7cfNyC",
-    "uploaderAvatar": "https://peertube331.pocketnet.app/images/3b1088dee9b2fa7bdb4c61328b6435db/3b1088dee9b2fa7bdb4c61328b6435db-original.jpg",
-    "uploaderReputation": 50115,
-    "description": "Почему вы его арестовываете? — Потому что он читает Библию на улице.",
-    "duration": 61,
-    "timestamp": "2025-08-09T19:42:45.000Z",
-    "formattedDate": "8/9/2025",
-    "likes": 0,
-    "comments": 0,
-    "ratingsCount": 0,
-    "averageRating": 0,
-    "userRating": 0,
-    "commentData": [],
-    "type": "video",
-    "tags": [
-      "невероятно_но_факт"
-    ],
-    "language": "ru",
-    "hasVideo": true,
-    "videoInfo": {
-      "peertube": {
-        "instance": "peertube800.pocketnet.app",
-        "uuid": "e2ed8123-3250-4a9d-955b-50d3f0cdb42a",
-        "durationSeconds": 61,
-        "hlsUrl": "https://peertube800.pocketnet.app/static/streaming-playlists/hls/e2ed8123-3250-4a9d-955b-50d3f0cdb42a/68a35cca-0a39-4209-a68e-4e2b201fe923-master.m3u8",
-        "apiUrl": "https://peertube800.pocketnet.app/api/v1/videos/e2ed8123-3250-4a9d-955b-50d3f0cdb42a"
-      }
-    },
-    "rawPost": {
-      "video_hash": "d6bae28894a36b4a261b6fc611cc17bc9e4da57620118aa5e1b231d5b5207aac",
-      "bastyon_post_link": "https://bastyon.com/post?s=d6bae28894a36b4a261b6fc611cc17bc9e4da57620118aa5e1b231d5b5207aac",
-      "author_address": "P9FZbiqb2h3knUQDtHjp9cke2AwC7cfNyC",
-      "caption": "Почему вы его арестовываете? — Потому что он читает Библию на улице.",
-      "description": "\n— Вам это мешает? \n— Я мусульманин.\n\nНовейший мировой порядок в Великопакистании. \nСвященник стоял на улице читая Библию вслух, к нему подошёл полицейский, который представился мусульманином и произвёл арест. Священнику предъявили обвинения в разжигании ненависти и поместили на 4 месяца в тюрьму.",
-      "hashtags": "[\"невероятно_но_факт\"]",
-      "video_url": "peertube://peertube800.pocketnet.app/e2ed8123-3250-4a9d-955b-50d3f0cdb42a",
-      "block_height": 3416479,
-      "timestamp": 1754768565,
-      "language": "ru",
-      "author_reputation": 50115,
-      "tx_id": 140113210,
-      "author_name": "yug161ru",
-      "author_avatar": "https://peertube331.pocketnet.app/images/3b1088dee9b2fa7bdb4c61328b6435db/3b1088dee9b2fa7bdb4c61328b6435db-original.jpg",
-      "peertube": {
-        "instance": "peertube800.pocketnet.app",
-        "uuid": "e2ed8123-3250-4a9d-955b-50d3f0cdb42a",
-        "durationSeconds": 61,
-        "hlsUrl": "https://peertube800.pocketnet.app/static/streaming-playlists/hls/e2ed8123-3250-4a9d-955b-50d3f0cdb42a/68a35cca-0a39-4209-a68e-4e2b201fe923-master.m3u8",
-        "apiUrl": "https://peertube800.pocketnet.app/api/v1/videos/e2ed8123-3250-4a9d-955b-50d3f0cdb42a"
-      },
-      "comments_count": 0,
-      "comments": []
-    },
-    "bastyonPostLink": "https://bastyon.com/post?s=d6bae28894a36b4a261b6fc611cc17bc9e4da57620118aa5e1b231d5b5207aac"
-  },
-  {
     "id": "26735eba98b5770ae3fad4114c57ba4a7b0d47f4a4bdcf127ef1a4b59ae083b1",
     "hash": "26735eba98b5770ae3fad4114c57ba4a7b0d47f4a4bdcf127ef1a4b59ae083b1",
     "txid": "26735eba98b5770ae3fad4114c57ba4a7b0d47f4a4bdcf127ef1a4b59ae083b1",
@@ -315,80 +253,18 @@
     "bastyonPostLink": "https://bastyon.com/post?s=ea8b5c7a6f51277333209a9d8e43111bbd4924ca7560aa68763143c9909c722f"
   },
   {
-    "id": "71420c343e231dba8425153279430b8c59c0358caf59240c1e12fb005cead54a",
-    "hash": "71420c343e231dba8425153279430b8c59c0358caf59240c1e12fb005cead54a",
-    "txid": "71420c343e231dba8425153279430b8c59c0358caf59240c1e12fb005cead54a",
-    "url": "peertube://peertube800.pocketnet.app/cf792d31-3638-4d29-a371-becc235cb14e",
+    "id": "6e32bb0db523731a2d05bfbc172c08749b46be0a75f26bed8e2474a779f0ab5b",
+    "hash": "6e32bb0db523731a2d05bfbc172c08749b46be0a75f26bed8e2474a779f0ab5b",
+    "txid": "6e32bb0db523731a2d05bfbc172c08749b46be0a75f26bed8e2474a779f0ab5b",
+    "url": "peertube://peertube701.pocketnet.app/d5ef8960-970d-415f-a2b8-18e8cad275ff",
     "resolutions": [],
-    "uploader": "yug161ru",
-    "uploaderAddress": "P9FZbiqb2h3knUQDtHjp9cke2AwC7cfNyC",
-    "uploaderAvatar": "https://peertube331.pocketnet.app/images/3b1088dee9b2fa7bdb4c61328b6435db/3b1088dee9b2fa7bdb4c61328b6435db-original.jpg",
-    "uploaderReputation": 50115,
-    "description": "Их боротьба: в Италии хохляцкая бешенка сорвала российский флаг на АЗС и потопталась на нем",
-    "duration": 53,
-    "timestamp": "2025-08-09T19:38:59.000Z",
-    "formattedDate": "8/9/2025",
-    "likes": 0,
-    "comments": 0,
-    "ratingsCount": 0,
-    "averageRating": 0,
-    "userRating": 0,
-    "commentData": [],
-    "type": "video",
-    "tags": [
-      "украина"
-    ],
-    "language": "ru",
-    "hasVideo": true,
-    "videoInfo": {
-      "peertube": {
-        "instance": "peertube800.pocketnet.app",
-        "uuid": "cf792d31-3638-4d29-a371-becc235cb14e",
-        "durationSeconds": 53,
-        "hlsUrl": "https://peertube800.pocketnet.app/static/streaming-playlists/hls/cf792d31-3638-4d29-a371-becc235cb14e/ac14bcec-7bfb-4671-a36c-fb4301706c8e-master.m3u8",
-        "apiUrl": "https://peertube800.pocketnet.app/api/v1/videos/cf792d31-3638-4d29-a371-becc235cb14e"
-      }
-    },
-    "rawPost": {
-      "video_hash": "71420c343e231dba8425153279430b8c59c0358caf59240c1e12fb005cead54a",
-      "bastyon_post_link": "https://bastyon.com/post?s=71420c343e231dba8425153279430b8c59c0358caf59240c1e12fb005cead54a",
-      "author_address": "P9FZbiqb2h3knUQDtHjp9cke2AwC7cfNyC",
-      "caption": "Их боротьба: в Италии хохляцкая бешенка сорвала российский флаг на АЗС и потопталась на нем",
-      "description": "\n\nВладелец заправки был поражен таким поведением, но не смог остановить неадекватку. \n\nВ местных соцсетях хохлуху осудили и назвали «нацистской гариллой».\n\nРожу оксанки хорошо видно.\nНаверное, русские люди проживающие там просто так это не оставят…",
-      "hashtags": "[\"украина\"]",
-      "video_url": "peertube://peertube800.pocketnet.app/cf792d31-3638-4d29-a371-becc235cb14e",
-      "block_height": 3416475,
-      "timestamp": 1754768339,
-      "language": "ru",
-      "author_reputation": 50115,
-      "tx_id": 140112685,
-      "author_name": "yug161ru",
-      "author_avatar": "https://peertube331.pocketnet.app/images/3b1088dee9b2fa7bdb4c61328b6435db/3b1088dee9b2fa7bdb4c61328b6435db-original.jpg",
-      "peertube": {
-        "instance": "peertube800.pocketnet.app",
-        "uuid": "cf792d31-3638-4d29-a371-becc235cb14e",
-        "durationSeconds": 53,
-        "hlsUrl": "https://peertube800.pocketnet.app/static/streaming-playlists/hls/cf792d31-3638-4d29-a371-becc235cb14e/ac14bcec-7bfb-4671-a36c-fb4301706c8e-master.m3u8",
-        "apiUrl": "https://peertube800.pocketnet.app/api/v1/videos/cf792d31-3638-4d29-a371-becc235cb14e"
-      },
-      "comments_count": 0,
-      "comments": []
-    },
-    "bastyonPostLink": "https://bastyon.com/post?s=71420c343e231dba8425153279430b8c59c0358caf59240c1e12fb005cead54a"
-  },
-  {
-    "id": "62f588ffb8f279cc7c955db3187f2dd7b8fb1a39407e5be9dbb6d495892e13bd",
-    "hash": "62f588ffb8f279cc7c955db3187f2dd7b8fb1a39407e5be9dbb6d495892e13bd",
-    "txid": "62f588ffb8f279cc7c955db3187f2dd7b8fb1a39407e5be9dbb6d495892e13bd",
-    "url": "peertube://peertube160.pocketnet.app/37de3005-6b05-4b4b-83d4-0ad972ab24be",
-    "resolutions": [],
-    "uploader": "Totalcombat",
-    "uploaderAddress": "PL4Qn3ut3zXmZ2rpMPk4uuQnTM1FtTSpTy",
-    "uploaderAvatar": "https://i.imgur.com/lsKwqvc.jpg",
-    "uploaderReputation": 148405,
-    "description": "Гениальное изобретение ! ",
-    "duration": 24,
-    "timestamp": "2025-08-09T14:46:38.000Z",
+    "uploader": "Shuravi1981",
+    "uploaderAddress": "PTqUteJqycCRWPsanfPRoPo3MgvnJq8CGt",
+    "uploaderAvatar": "https://peertube281.pocketnet.app/images/8e44a64e6d52851417b83a864aefbd4b/8e44a64e6d52851417b83a864aefbd4b-original.jpg",
+    "uploaderReputation": 15255,
+    "description": "Малая нашла себе друга🤣🤣🤣",
+    "duration": 35,
+    "timestamp": "2025-08-09T14:49:12.000Z",
     "formattedDate": "8/9/2025",
     "likes": 0,
     "comments": 0,
@@ -400,107 +276,45 @@
     "tags": [
       "мемы",
       "юмор",
-      "сделайсам"
+      "друг",
+      "на_прогулку"
     ],
     "language": "ru",
     "hasVideo": true,
     "videoInfo": {
       "peertube": {
-        "instance": "peertube160.pocketnet.app",
-        "uuid": "37de3005-6b05-4b4b-83d4-0ad972ab24be",
-        "durationSeconds": 24,
-        "hlsUrl": "https://peertube160.pocketnet.app/static/streaming-playlists/hls/37de3005-6b05-4b4b-83d4-0ad972ab24be/2a4f3f29-84b4-4095-9426-a7ec3c1f12b2-master.m3u8",
-        "apiUrl": "https://peertube160.pocketnet.app/api/v1/videos/37de3005-6b05-4b4b-83d4-0ad972ab24be"
+        "instance": "peertube701.pocketnet.app",
+        "uuid": "d5ef8960-970d-415f-a2b8-18e8cad275ff",
+        "durationSeconds": 35,
+        "hlsUrl": "https://peertube701.pocketnet.app/static/streaming-playlists/hls/d5ef8960-970d-415f-a2b8-18e8cad275ff/d0f43d01-34bc-4b73-bca1-d707865fe231-master.m3u8",
+        "apiUrl": "https://peertube701.pocketnet.app/api/v1/videos/d5ef8960-970d-415f-a2b8-18e8cad275ff"
       }
     },
     "rawPost": {
-      "video_hash": "62f588ffb8f279cc7c955db3187f2dd7b8fb1a39407e5be9dbb6d495892e13bd",
-      "bastyon_post_link": "https://bastyon.com/post?s=62f588ffb8f279cc7c955db3187f2dd7b8fb1a39407e5be9dbb6d495892e13bd",
-      "author_address": "PL4Qn3ut3zXmZ2rpMPk4uuQnTM1FtTSpTy",
-      "caption": "Гениальное изобретение ! ",
-      "description": null,
-      "hashtags": "[\"мемы\",\"юмор\",\"сделайсам\"]",
-      "video_url": "peertube://peertube160.pocketnet.app/37de3005-6b05-4b4b-83d4-0ad972ab24be",
-      "block_height": 3416176,
-      "timestamp": 1754750798,
-      "language": "ru",
-      "author_reputation": 148405,
-      "tx_id": 140033798,
-      "author_name": "Totalcombat",
-      "author_avatar": "https://i.imgur.com/lsKwqvc.jpg",
-      "peertube": {
-        "instance": "peertube160.pocketnet.app",
-        "uuid": "37de3005-6b05-4b4b-83d4-0ad972ab24be",
-        "durationSeconds": 24,
-        "hlsUrl": "https://peertube160.pocketnet.app/static/streaming-playlists/hls/37de3005-6b05-4b4b-83d4-0ad972ab24be/2a4f3f29-84b4-4095-9426-a7ec3c1f12b2-master.m3u8",
-        "apiUrl": "https://peertube160.pocketnet.app/api/v1/videos/37de3005-6b05-4b4b-83d4-0ad972ab24be"
-      },
-      "comments_count": 0,
-      "comments": []
-    },
-    "bastyonPostLink": "https://bastyon.com/post?s=62f588ffb8f279cc7c955db3187f2dd7b8fb1a39407e5be9dbb6d495892e13bd"
-  },
-  {
-    "id": "5bab0ff3c4fd5f189d9ee61144ed87696eb9832fa506af2abfcbdd629f6255d8",
-    "hash": "5bab0ff3c4fd5f189d9ee61144ed87696eb9832fa506af2abfcbdd629f6255d8",
-    "txid": "5bab0ff3c4fd5f189d9ee61144ed87696eb9832fa506af2abfcbdd629f6255d8",
-    "url": "peertube://peertube800.pocketnet.app/b3534f38-a26f-4e01-90fa-fddfe00c8e82",
-    "resolutions": [],
-    "uploader": "GAS_n_JAZZ",
-    "uploaderAddress": "PBUexDntvhPikiszBbzJrjpHmAqkTM9dbd",
-    "uploaderAvatar": "https://peertube800.pocketnet.app/images/ffb14dbc557b97ec1c33fbcbfc8e72c7/ffb14dbc557b97ec1c33fbcbfc8e72c7-original.jpg",
-    "uploaderReputation": 29695,
-    "description": "Белое Злато   ",
-    "duration": 134,
-    "timestamp": "2025-08-09T14:45:33.000Z",
-    "formattedDate": "8/9/2025",
-    "likes": 0,
-    "comments": 0,
-    "ratingsCount": 0,
-    "averageRating": 0,
-    "userRating": 0,
-    "commentData": [],
-    "type": "video",
-    "tags": [
-      "искусство",
-      "музыка"
-    ],
-    "language": "ru",
-    "hasVideo": true,
-    "videoInfo": {
-      "peertube": {
-        "instance": "peertube800.pocketnet.app",
-        "uuid": "b3534f38-a26f-4e01-90fa-fddfe00c8e82",
-        "durationSeconds": 134,
-        "hlsUrl": "https://peertube800.pocketnet.app/static/streaming-playlists/hls/b3534f38-a26f-4e01-90fa-fddfe00c8e82/b588b28b-6d3d-4cab-834b-fa6d860837a0-master.m3u8",
-        "apiUrl": "https://peertube800.pocketnet.app/api/v1/videos/b3534f38-a26f-4e01-90fa-fddfe00c8e82"
-      }
-    },
-    "rawPost": {
-      "video_hash": "5bab0ff3c4fd5f189d9ee61144ed87696eb9832fa506af2abfcbdd629f6255d8",
-      "bastyon_post_link": "https://bastyon.com/post?s=5bab0ff3c4fd5f189d9ee61144ed87696eb9832fa506af2abfcbdd629f6255d8",
-      "author_address": "PBUexDntvhPikiszBbzJrjpHmAqkTM9dbd",
-      "caption": "Белое Злато   ",
-      "description": "- Когда я устану жить -",
-      "hashtags": "[\"искусство\",\"музыка\"]",
-      "video_url": "peertube://peertube800.pocketnet.app/b3534f38-a26f-4e01-90fa-fddfe00c8e82",
+      "video_hash": "6e32bb0db523731a2d05bfbc172c08749b46be0a75f26bed8e2474a779f0ab5b",
+      "bastyon_post_link": "https://bastyon.com/post?s=6e32bb0db523731a2d05bfbc172c08749b46be0a75f26bed8e2474a779f0ab5b",
+      "author_address": "PTqUteJqycCRWPsanfPRoPo3MgvnJq8CGt",
+      "caption": "Малая нашла себе друга🤣🤣🤣",
+      "description": "Вот умора!А мамочка нервничает💥😂😂😂, отдельно для для жолбодялов, скелет пластиковый,мать медик.",
+      "hashtags": "[\"мемы\",\"юмор\",\"друг\",\"на_прогулку\"]",
+      "video_url": "peertube://peertube701.pocketnet.app/d5ef8960-970d-415f-a2b8-18e8cad275ff",
       "block_height": 3416174,
-      "timestamp": 1754750733,
+      "timestamp": 1754750952,
       "language": "ru",
-      "author_reputation": 29695,
-      "tx_id": 140071899,
-      "author_name": "GAS_n_JAZZ",
-      "author_avatar": "https://peertube800.pocketnet.app/images/ffb14dbc557b97ec1c33fbcbfc8e72c7/ffb14dbc557b97ec1c33fbcbfc8e72c7-original.jpg",
+      "author_reputation": 15255,
+      "tx_id": 139926097,
+      "author_name": "Shuravi1981",
+      "author_avatar": "https://peertube281.pocketnet.app/images/8e44a64e6d52851417b83a864aefbd4b/8e44a64e6d52851417b83a864aefbd4b-original.jpg",
       "peertube": {
-        "instance": "peertube800.pocketnet.app",
-        "uuid": "b3534f38-a26f-4e01-90fa-fddfe00c8e82",
-        "durationSeconds": 134,
-        "hlsUrl": "https://peertube800.pocketnet.app/static/streaming-playlists/hls/b3534f38-a26f-4e01-90fa-fddfe00c8e82/b588b28b-6d3d-4cab-834b-fa6d860837a0-master.m3u8",
-        "apiUrl": "https://peertube800.pocketnet.app/api/v1/videos/b3534f38-a26f-4e01-90fa-fddfe00c8e82"
+        "instance": "peertube701.pocketnet.app",
+        "uuid": "d5ef8960-970d-415f-a2b8-18e8cad275ff",
+        "durationSeconds": 35,
+        "hlsUrl": "https://peertube701.pocketnet.app/static/streaming-playlists/hls/d5ef8960-970d-415f-a2b8-18e8cad275ff/d0f43d01-34bc-4b73-bca1-d707865fe231-master.m3u8",
+        "apiUrl": "https://peertube701.pocketnet.app/api/v1/videos/d5ef8960-970d-415f-a2b8-18e8cad275ff"
       },
       "comments_count": 0,
       "comments": []
     },
-    "bastyonPostLink": "https://bastyon.com/post?s=5bab0ff3c4fd5f189d9ee61144ed87696eb9832fa506af2abfcbdd629f6255d8"
+    "bastyonPostLink": "https://bastyon.com/post?s=6e32bb0db523731a2d05bfbc172c08749b46be0a75f26bed8e2474a779f0ab5b"
   }
 ]
