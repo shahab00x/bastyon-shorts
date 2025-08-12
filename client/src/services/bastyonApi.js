@@ -32,6 +32,14 @@ function mergeFetchOptions(extra) {
   return result;
 }
 
+// Quiet logger: suppresses warnings in console for expected network failures
+const QUIET_LOGS = true;
+function safeWarn(...args) {
+  try {
+    if (!QUIET_LOGS && typeof console !== 'undefined' && console.warn) console.warn(...args);
+  } catch (_) { /* no-op */ }
+}
+
 // Resolve API base dynamically at runtime when embedded or when provided via URL/global.
 let apiBaseInitPromise = null;
 function readQueryParamApiBase() {
@@ -123,8 +131,8 @@ try {
     try {
       hasExplicitApi = !!(import.meta && import.meta.env && import.meta.env.VITE_API_BASE_URL);
     } catch (_) { /* no-op */ }
-    if (!hasExplicitApi && typeof console !== 'undefined' && console.warn) {
-      console.warn('[bastyonApi] Embedded mode detected but VITE_API_BASE_URL is not set; using relative /api which may not reach your backend.');
+    if (!hasExplicitApi) {
+      safeWarn('[bastyonApi] Embedded mode detected but VITE_API_BASE_URL is not set; using relative /api which may not reach your backend.');
     }
   }
 } catch (_) { /* no-op */ }
@@ -137,13 +145,13 @@ export async function fetchPlaylist(lang = 'en') {
       cache: 'no-store'
     }));
     if (!response.ok) {
-      try { console.warn('[bastyonApi] Playlist fetch failed:', response.status); } catch (_) {}
+      try { safeWarn('[bastyonApi] Playlist fetch failed:', response.status); } catch (_) {}
       return [];
     }
     const data = await response.json();
     return Array.isArray(data) ? data : (data?.items || []);
   } catch (error) {
-    try { console.warn('Error fetching playlist JSON:', error); } catch (_) {}
+    try { safeWarn('Error fetching playlist JSON:', error); } catch (_) {}
     return [];
   }
 }
@@ -161,7 +169,7 @@ export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
     const response = await fetch(url, mergeFetchOptions());
     
     if (!response.ok) {
-      try { console.warn('[bastyonApi] BShorts fetch failed:', response.status, 'url:', url); } catch (_) {}
+      try { safeWarn('[bastyonApi] BShorts fetch failed:', response.status, 'url:', url); } catch (_) {}
       return [];
     }
     
@@ -169,7 +177,7 @@ export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
     // Server returns an array of videos directly
     return Array.isArray(data) ? data : (data.data || []);
   } catch (error) {
-    try { console.warn('Error fetching short videos (non-fatal):', error); } catch (_) {}
+    try { safeWarn('Error fetching short videos (non-fatal):', error); } catch (_) {}
     return [];
   }
 }
