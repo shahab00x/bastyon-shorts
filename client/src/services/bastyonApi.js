@@ -10,6 +10,28 @@ try {
   }
 } catch (_) { /* no-op */ }
 
+// Default CORS-friendly fetch options used across the client when embedded
+const DEFAULT_FETCH_OPTIONS = {
+  mode: 'cors',
+  credentials: 'omit',
+  cache: 'no-store',
+  redirect: 'follow',
+  // Conservative referrer policy to reduce cross-origin leakage
+  referrerPolicy: 'strict-origin-when-cross-origin',
+  headers: {
+    'Accept': 'application/json'
+  }
+};
+
+function mergeFetchOptions(extra) {
+  const base = DEFAULT_FETCH_OPTIONS;
+  const result = { ...base, ...(extra || {}) };
+  if (base.headers || extra?.headers) {
+    result.headers = { ...(base.headers || {}), ...(extra?.headers || {}) };
+  }
+  return result;
+}
+
 // Resolve API base dynamically at runtime when embedded or when provided via URL/global.
 let apiBaseInitPromise = null;
 function readQueryParamApiBase() {
@@ -110,9 +132,10 @@ try {
 // Fetch playlist JSON generated on the server and served statically
 export async function fetchPlaylist(lang = 'en') {
   try {
-    const response = await fetch(`/playlists/${encodeURIComponent(lang)}/latest.json`, {
+    const response = await fetch(`/playlists/${encodeURIComponent(lang)}/latest.json`, mergeFetchOptions({
+      // keep cache disabled for freshness
       cache: 'no-store'
-    });
+    }));
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -134,7 +157,7 @@ export async function fetchBShorts(lang = 'en', { limit, offset } = {}) {
     if (offset != null) params.set('offset', String(offset));
     const qs = params.toString();
     const url = `${API_BASE_URL}/videos/bshorts${qs ? `?${qs}` : ''}`;
-    const response = await fetch(url);
+    const response = await fetch(url, mergeFetchOptions());
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -154,7 +177,7 @@ export async function fetchProfile(address) {
   if (!address) throw new Error('address is required');
   await ensureApiBaseInitialized();
   const url = `${API_BASE_URL}/videos/profile?address=${encodeURIComponent(address)}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, mergeFetchOptions());
   if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
   return await res.json(); // { address, name, reputation, avatar, raw }
 }
@@ -165,7 +188,7 @@ export async function fetchProfiles(addresses) {
   if (!list.length) throw new Error('addresses must be a non-empty array');
   await ensureApiBaseInitialized();
   const url = `${API_BASE_URL}/videos/profile?addresses=${encodeURIComponent(list.join(','))}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, mergeFetchOptions());
   if (!res.ok) throw new Error(`Profiles fetch failed: ${res.status}`);
   return await res.json(); // { count, profiles: [ ... ] }
 }
@@ -183,7 +206,7 @@ export async function fetchComments(hash, { limit = 50, offset = 0, includeProfi
   if (repliesLimit != null) params.set('repliesLimit', String(repliesLimit));
   if (parentid != null) params.set('parentid', String(parentid));
   const url = `${API_BASE_URL}/videos/comments?${params.toString()}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, mergeFetchOptions());
   if (!res.ok) throw new Error(`Comments fetch failed: ${res.status}`);
   return await res.json();
 }
@@ -192,13 +215,14 @@ export async function fetchComments(hash, { limit = 50, offset = 0, includeProfi
 export async function postComment(videoId, commentText, userAddress) {
   try {
     await ensureApiBaseInitialized();
-    const response = await fetch(`${API_BASE_URL}/videos/comment`, {
+    const response = await fetch(`${API_BASE_URL}/videos/comment`, mergeFetchOptions({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
       body: JSON.stringify({ videoId, commentText, userAddress })
-    });
+    }));
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -216,13 +240,14 @@ export async function postComment(videoId, commentText, userAddress) {
 export async function donatePKoin(creatorAddress, amount, userAddress) {
   try {
     await ensureApiBaseInitialized();
-    const response = await fetch(`${API_BASE_URL}/donate`, {
+    const response = await fetch(`${API_BASE_URL}/donate`, mergeFetchOptions({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
       body: JSON.stringify({ creatorAddress, amount, userAddress })
-    });
+    }));
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -240,13 +265,14 @@ export async function donatePKoin(creatorAddress, amount, userAddress) {
 export async function rateVideo(videoId, rating, userAddress) {
   try {
     await ensureApiBaseInitialized();
-    const response = await fetch(`${API_BASE_URL}/videos/rate`, {
+    const response = await fetch(`${API_BASE_URL}/videos/rate`, mergeFetchOptions({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
       body: JSON.stringify({ videoId, rating, userAddress })
-    });
+    }));
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -264,13 +290,14 @@ export async function rateVideo(videoId, rating, userAddress) {
 export async function uploadVideo(videoData) {
   try {
     await ensureApiBaseInitialized();
-    const response = await fetch(`${API_BASE_URL}/videos/upload`, {
+    const response = await fetch(`${API_BASE_URL}/videos/upload`, mergeFetchOptions({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
       body: JSON.stringify(videoData)
-    });
+    }));
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);

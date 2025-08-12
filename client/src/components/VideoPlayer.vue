@@ -39,6 +39,7 @@
           playsinline
           webkit-playsinline
           x5-playsinline
+          crossorigin="anonymous"
           :preload="currentIndex === index ? 'auto' : 'none'"
           :class="videoFit[index] === 'contain' ? 'fit-contain' : 'fit-cover'"
           @click="togglePlayPause($event, index)"
@@ -832,6 +833,7 @@ export default defineComponent({
         const hls = new Hls({
           lowLatencyMode: true,
           backBufferLength: 60,
+          autoStartLoad: true,
           // Avoid credentialed XHR for cross-origin playlists/segments
           xhrSetup: (xhr) => { try { xhr.withCredentials = false; } catch (_) {} }
         });
@@ -906,6 +908,18 @@ export default defineComponent({
       }
       if (!videoEl) videoEl = this.$refs.videoElements?.[this.currentIndex] || this.$refs.videoElements;
       if (!videoEl) return;
+      // On first user interaction, if muted, unmute and play to satisfy autoplay policies
+      if (this.isMuted) {
+        try {
+          this.userWantsSound = true;
+          this.isMuted = false;
+          videoEl.muted = false;
+          videoEl.volume = 1.0;
+          this.pausedOverlayIndex = null;
+          videoEl.play().catch(() => {});
+        } catch (_) {}
+        return;
+      }
       if (videoEl.paused) {
         this.pausedOverlayIndex = null;
         videoEl.play().catch(() => {});
