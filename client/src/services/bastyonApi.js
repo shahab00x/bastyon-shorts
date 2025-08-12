@@ -205,22 +205,49 @@ try {
   }
 } catch (_) { /* no-op */ }
 
-// Fetch playlist JSON generated on the server and served statically
+// Fetch playlist JSON from cached files to avoid CORS and 502 issues
 export async function fetchPlaylist(lang = 'en') {
-  if (isApiDisabled()) return [];
+  if (isApiDisabled()) {
+    console.log('API disabled, using cached playlist for', lang);
+  }
+  
+  // Always use cached JSON files to avoid CORS and 502 errors
   try {
-    const response = await fetch(`/playlists/${encodeURIComponent(lang)}/latest.json`, mergeFetchOptions({
-      // keep cache disabled for freshness
-      cache: 'no-store'
-    }));
-    if (!response.ok) {
-      try { safeWarn('[bastyonApi] Playlist fetch failed:', response.status); } catch (_) {}
-      return [];
-    }
+    const playlistPath = `/playlists/${lang}/latest.json`;
+    const response = await fetch(playlistPath);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    return Array.isArray(data) ? data : (data?.items || []);
+    
+    // Convert PeerTube URLs to direct URLs
+    return data.map(video => ({
+      ...video,
+      url: video.url.startsWith('peertube://') 
+        ? video.url.replace('peertube://', 'https://')
+        : video.url,
+      playlistUrl: video.url.startsWith('peertube://') 
+        ? video.url.replace('peertube://', 'https://').replace('/videos/', '/download/streaming-playlists/hls/videos/') + '-360-fragmented.mp4'
+        : video.url
+    }));
+    
   } catch (error) {
-    try { safeWarn('Error fetching playlist JSON:', error); } catch (_) {}
+    console.warn('Failed to load cached playlist:', error);
+    // Fallback to English if specific language fails
+    if (lang !== 'en') {
+      try {
+        const fallbackResponse = await fetch('/playlists/en/latest.json');
+        if (!fallbackResponse.ok) throw new Error(`HTTP ${fallbackResponse.status}`);
+        const data = await fallbackResponse.json();
+        return data.map(video => ({
+          ...video,
+          url: video.url.startsWith('peertube://') 
+            ? video.url.replace('peertube://', 'https://')
+            : video.url
+        }));
+      } catch (fallbackError) {
+        console.error('Failed to load fallback playlist:', fallbackError);
+        return [];
+      }
+    }
     return [];
   }
 }
