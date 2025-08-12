@@ -40,31 +40,69 @@ function safeWarn(...args) {
   } catch (_) { /* no-op */ }
 }
 
-// Env flag to disable API calls entirely (set VITE_DISABLE_API=true or vite_disable_api=true)
-const DISABLE_API = (() => {
-  try {
-    const env = (typeof import.meta !== 'undefined' && import.meta && import.meta.env)
-      ? import.meta.env
-      : undefined;
-    const raw = ((env && (env.VITE_DISABLE_API ?? env.vite_disable_api)) || '').toString();
-    const v = raw.toLowerCase();
-    return v === '1' || v === 'true' || v === 'yes';
-  } catch (_) { return false; }
-})();
-
-// Runtime toggle to disable API calls without rebuild
+// Runtime check to disable API calls entirely
+// Checks environment variables, URL params, localStorage, and global flags
 function isApiDisabled() {
+  // Manual override - force disable API calls
+  // Set this to true to disable all API calls regardless of other settings
+  const FORCE_DISABLE_API = true;
+  
+  if (FORCE_DISABLE_API) {
+    console.log('API calls disabled via manual override');
+    return true;
+  }
+  
   try {
-    if (DISABLE_API) return true;
+    // Check environment variables at runtime
+    let envValue = '';
+    
+    // Try import.meta.env (Vite)
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta && import.meta.env) {
+        envValue = (import.meta.env.VITE_DISABLE_API ?? import.meta.env.vite_disable_api ?? '').toString();
+      }
+    } catch (_) {}
+    
+    // Try process.env (Node.js)
+    try {
+      if (typeof process !== 'undefined' && process.env) {
+        envValue = envValue || (process.env.VITE_DISABLE_API ?? process.env.vite_disable_api ?? '').toString();
+      }
+    } catch (_) {}
+    
+    if (envValue.toLowerCase() === 'true' || envValue === '1' || envValue === 'yes') {
+      console.log('API calls disabled via environment variable:', envValue);
+      return true;
+    }
+    
+    // Check URL parameters
     if (typeof window !== 'undefined') {
       const sp = new URLSearchParams(window.location.search || '');
       const qp = (sp.get('disableApi') || sp.get('disable_api') || '').toLowerCase();
-      if (qp === '1' || qp === 'true' || qp === 'yes') return true;
+      if (qp === '1' || qp === 'true' || qp === 'yes') {
+        console.log('API calls disabled via URL parameter');
+        return true;
+      }
+      
+      // Check localStorage
       try {
         const ls = (localStorage.getItem('bshorts:disableApi') || '').toLowerCase();
-        if (ls === '1' || ls === 'true' || ls === 'yes') return true;
+        if (ls === '1' || ls === 'true' || ls === 'yes') {
+          console.log('API calls disabled via localStorage');
+          return true;
+        }
       } catch (_) {}
-      if (window.__BShortsDisableApi === true) return true;
+      
+      // Check global variables
+      if (window.__BShortsDisableApi === true) {
+        console.log('API calls disabled via global variable');
+        return true;
+      }
+      
+      if (window.__VITE_DISABLE_API === true) {
+        console.log('API calls disabled via VITE global');
+        return true;
+      }
     }
   } catch (_) { /* ignore */ }
   return false;
