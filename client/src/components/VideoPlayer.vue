@@ -40,7 +40,6 @@
           webkit-playsinline
           x5-playsinline
           :preload="currentIndex === index ? 'auto' : 'none'"
-          crossorigin="anonymous"
           :class="videoFit[index] === 'contain' ? 'fit-contain' : 'fit-cover'"
           @click="togglePlayPause($event, index)"
           @loadeddata="onVideoLoaded(index)"
@@ -292,6 +291,8 @@
         <div class="drawer-footer">
           <div class="add-comment-row">
             <input
+              id="add-comment"
+              name="comment"
               type="text"
               v-model="newComment"
               placeholder="Add a comment..."
@@ -616,8 +617,8 @@ export default defineComponent({
           if (parts.length >= 2) {
             const hostName = parts[0];
             const videoId = parts[1];
-            // Use HLS master playlist for PeerTube
-            return `https://${hostName}/download/streaming-playlists/hls/${videoId}/master.m3u8`;
+            // Use direct fragmented MP4 to avoid CORB/CORS issues with HLS in iframe
+            return `https://${hostName}/download/streaming-playlists/hls/videos/${videoId}-360-fragmented.mp4`;
           }
         }
         return decoded;
@@ -631,12 +632,12 @@ export default defineComponent({
       try {
         const v = video || this.playlist?.[index];
         const urlStr = String(v?.url || '');
-        const isPeerTube = urlStr.startsWith('peertube://');
-        const derivedHls = isPeerTube ? this.getVideoSource(urlStr) : null;
-        const hlsUrl = v?.videoInfo?.peertube?.hlsUrl || derivedHls;
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         const nativeHls = el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl');
-        return !!(hlsUrl && typeof Hls !== 'undefined' && Hls && Hls.isSupported() && !nativeHls);
+        // Only use HLS if URL explicitly points to an HLS playlist and MSE is supported
+        const hlsCandidate = v?.videoInfo?.peertube?.hlsUrl
+          || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
+        return !!(hlsCandidate && typeof Hls !== 'undefined' && Hls && Hls.isSupported() && !nativeHls);
       } catch (_) { return false; }
     },
     // Resolve the best initial src for this device
@@ -645,20 +646,19 @@ export default defineComponent({
         const v = video || this.playlist?.[index];
         if (!v) return '';
         const urlStr = String(v.url || '');
-        const isPeerTube = urlStr.startsWith('peertube://');
-        const hlsUrl = v?.videoInfo?.peertube?.hlsUrl;
-        const derivedHls = isPeerTube ? this.getVideoSource(urlStr) : null;
+        const derived = this.getVideoSource(urlStr);
+        const hlsCandidate = v?.videoInfo?.peertube?.hlsUrl
+          || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
+          || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         // If we'll use hls.js, do not bind a src so hls can take over cleanly
-        if ((hlsUrl || derivedHls) && this.shouldUseHlsJs(index, v)) return '';
+        if (hlsCandidate && this.shouldUseHlsJs(index, v)) return '';
         // Native HLS (Safari/iOS)
-        if ((hlsUrl || derivedHls) && el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl')) {
-          return hlsUrl || derivedHls;
+        if (hlsCandidate && el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl')) {
+          return hlsCandidate;
         }
-        // Avoid converting PeerTube to fragmented MP4 due to CORS/CORB; require HLS
-        if (isPeerTube) return '';
-        // For non-PeerTube URLs, allow direct
-        return this.getVideoSource(v.url);
+        // Default to direct source (covers PeerTube fragmented MP4)
+        return derived;
       } catch (_) { return ''; }
     },
     async addComment() {
@@ -780,8 +780,10 @@ export default defineComponent({
       const video = this.playlist[index];
       if (!video) return;
       const urlStr = String(video?.url || '');
-      const derivedHls = urlStr.startsWith('peertube://') ? this.getVideoSource(urlStr) : null;
-      const hlsUrl = video?.videoInfo?.peertube?.hlsUrl || derivedHls;
+      const derived = this.getVideoSource(urlStr);
+      const hlsUrl = video?.videoInfo?.peertube?.hlsUrl
+        || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
+        || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
       // Compute static fallback if server prefers /download path
       const staticFallback = (hlsUrl && hlsUrl.includes('/download/streaming-playlists/hls/'))
         ? hlsUrl.replace('/download/streaming-playlists/hls/', '/static/streaming-playlists/hls/')
