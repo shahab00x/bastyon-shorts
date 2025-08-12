@@ -790,6 +790,8 @@ export default defineComponent({
         try {
           // Ensure inline playback behavior on iOS Safari
           videoEl.setAttribute('playsinline','');
+          // Ensure CORS-safe access to media for MSE/native HLS
+          try { videoEl.setAttribute('crossorigin','anonymous'); videoEl.crossOrigin = 'anonymous'; } catch (_) {}
           videoEl.muted = !this.userWantsSound;
           if (!this.userWantsSound) this.isMuted = true;
         } catch (_) {}
@@ -807,7 +809,7 @@ export default defineComponent({
                 this.isMuted = true;
                 videoEl.muted = true;
               }
-              videoEl.play().catch(() => {});
+              videoEl.play().catch(() => { this.pausedOverlayIndex = index; });
             } catch (_) {}
             videoEl.removeEventListener('canplay', onCanPlay);
           };
@@ -858,6 +860,8 @@ export default defineComponent({
         // Ensure correct attributes for mobile Chromium
         try {
           videoEl.setAttribute('playsinline','');
+          // Ensure CORS-safe access to media for MSE
+          try { videoEl.setAttribute('crossorigin','anonymous'); videoEl.crossOrigin = 'anonymous'; } catch (_) {}
           videoEl.muted = !this.userWantsSound;
           if (!this.userWantsSound) this.isMuted = true;
         } catch (_) {}
@@ -972,7 +976,7 @@ export default defineComponent({
           try {
             videoEl.muted = false;
             videoEl.volume = 1.0;
-            videoEl.play().catch(() => {});
+            videoEl.play().catch(() => { this.pausedOverlayIndex = this.currentIndex; });
           } catch (_) {}
         }
       });
