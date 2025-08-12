@@ -769,13 +769,7 @@ export default defineComponent({
         if (d > 0) this.bufferedPercents[index] = Math.max(0, Math.min(100, (bufferedEnd / d) * 100));
       } catch (_) {}
     },
-    nextVideo() {
-      try {
-        if (!Array.isArray(this.playlist) || !this.playlist.length) return;
-        const next = (this.currentIndex + 1) % this.playlist.length;
-        this.currentIndex = next;
-      } catch (_) {}
-    },
+    // removed duplicate nextVideo (kept enhanced version below)
     // Setup HLS for a particular video index if supported and hlsUrl is present
     setupHlsForIndex(index) {
       const video = this.playlist[index];
@@ -788,6 +782,8 @@ export default defineComponent({
         || video?.videoInfo?.peertube?.hlsUrl
         || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
         || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
+      // Explicitly define staticFallback to avoid ReferenceError in error handlers
+      const staticFallback = null;
       if (!hlsUrl) return;
 
       const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
@@ -837,6 +833,7 @@ export default defineComponent({
           return;
         }
 
+
       if (Hls && Hls.isSupported()) {
         const hls = new Hls({
           lowLatencyMode: true,
@@ -844,7 +841,7 @@ export default defineComponent({
           // Avoid credentialed XHR for cross-origin playlists/segments
           xhrSetup: (xhr) => { try { xhr.withCredentials = false; } catch (_) {} }
         });
-        this.hlsPlayers.set(index, hls)
+        this.hlsPlayers.set(index, hls);
 
         const tryPlay = () => {
           try {
@@ -896,7 +893,7 @@ export default defineComponent({
         hls.on(Hls.Events.BUFFER_APPENDED, () => { if (this.bufferingIndex === index) this.bufferingIndex = null; });
 
         // Attach last so MEDIA_ATTACHED fires and loadSource begins
-        hls.attachMedia(videoEl)
+        hls.attachMedia(videoEl);
       }
     },
     // Toggle play/pause on tap
@@ -1023,95 +1020,19 @@ export default defineComponent({
       this.isVideoPlaying = false;
       if (this.currentIndex === index) this.pausedOverlayIndex = index;
     },
-    // Ensure only the active slide's video is playing
-    ensureOnlyActivePlaying() {
-      try {
-        const refs = this.$refs.videoElements;
-        const list = Array.isArray(refs) ? refs : (refs ? [refs] : []);
-        list.forEach((el, i) => {
-          if (!el) return;
-          try {
-            if (i === this.currentIndex) {
-              if (this.settings?.autoplay && el.paused) el.play().catch(() => {});
-            } else {
-              if (!el.paused) el.pause();
-            }
-          } catch (_) {}
-        });
-      } catch (_) {}
-    },
+    // removed duplicate ensureOnlyActivePlaying (keeping earlier version)
     // Recompute fit on viewport resize
     onWindowResize() {
       this.updateVideoFitForIndex(this.currentIndex);
       this.adjustDonateChips();
     },
     // Ensure refs are captured safely
-    cacheVideoElements() {
-      // Vue keeps refs updated after nextTick; no-op placeholder for clarity
-    },
+    // removed duplicate cacheVideoElements (keeping earlier version)
     // Pause all non-active videos and play only the active one
-    ensureOnlyActivePlaying() {
-      const refs = this.$refs.videoElements;
-      if (!refs) return;
-      const list = Array.isArray(refs) ? refs : [refs];
-      for (let i = 0; i < list.length; i++) {
-        const el = list[i];
-        if (!el) continue;
-        if (i !== this.currentIndex) {
-          try { el.pause(); } catch (_) {}
-        }
-      }
-      const active = list[this.currentIndex];
-      if (active) {
-        try {
-          if (this.userWantsSound) {
-            this.isMuted = false;
-            active.muted = false;
-            active.volume = 1.0;
-          }
-          // Only initiate autoplay when:
-          // - autoplay setting is on
-          // - Hls.js is not managing this media element
-          // - media is sufficiently buffered (readyState >= 3)
-          const hlsManaged = this.hlsPlayers && this.hlsPlayers.has(this.currentIndex);
-          if (this.settings?.autoplay && !hlsManaged && Number(active.readyState) >= 3) {
-            active.play().catch(() => {});
-          }
-        } catch (_) {}
-      }
-    },
-    onLoadedMetadata(index) {
-      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
-      if (!videoEl || isNaN(videoEl.duration)) return;
-      this.durations[index] = videoEl.duration;
-      // Initialize buffered/progress when metadata is ready
-      this.onProgressUpdate(index);
-      this.onTimeUpdate(index);
-      // Decide best fit for this video's aspect ratio on this device
-      this.updateVideoFit(index);
-    },
-    onTimeUpdate(index) {
-      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
-      const dur = this.durations[index] || videoEl?.duration || 0;
-      if (!videoEl || !dur || !isFinite(dur)) return;
-      const pct = Math.max(0, Math.min(100, (videoEl.currentTime / dur) * 100));
-      this.progressPercents[index] = pct;
-      this.currentTimes[index] = videoEl.currentTime;
-    },
-    onProgressUpdate(index) {
-      const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
-      const dur = this.durations[index] || videoEl?.duration || 0;
-      if (!videoEl || !dur || !isFinite(dur)) return;
-      try {
-        const buf = videoEl.buffered;
-        let end = 0;
-        if (buf && buf.length) {
-          end = buf.end(buf.length - 1);
-        }
-        const pct = Math.max(0, Math.min(100, (end / dur) * 100));
-        this.bufferedPercents[index] = pct;
-      } catch (_) {}
-    },
+    // removed duplicate ensureOnlyActivePlaying (keeping earlier version)
+    // removed duplicate onLoadedMetadata (keeping earlier version)
+    // removed duplicate onTimeUpdate (keeping earlier version)
+    // removed duplicate onProgressUpdate (keeping earlier version)
     onSeekStart(e, index) {
       this.seekingIndex = index;
       this.onSeekMove(e, index);
@@ -1504,13 +1425,7 @@ export default defineComponent({
     closeSettingsPage() {
       this.showSettingsMenu = false;
     },
-    toggleDescriptionDrawer() {
-      this.showDescriptionDrawer = !this.showDescriptionDrawer;
-    },
-    closeAnyDrawer() {
-      this.showCommentsDrawer = false;
-      this.showDescriptionDrawer = false;
-    },
+    // removed duplicate toggleDescriptionDrawer/closeAnyDrawer (keeping earlier versions)
     async loadCommentsForCurrent(initial = false) {
       try {
         const v = this.currentVideo
