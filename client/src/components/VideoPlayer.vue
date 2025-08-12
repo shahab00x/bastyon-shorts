@@ -606,37 +606,19 @@ export default defineComponent({
       }
       return out
     },
-    // Convert peertube://host/uuid to HLS master playlist (prefer static path for correct MIME/CORS)
+    // Decode URL; do not build PeerTube URLs here. Use API-provided playlistUrl instead.
     getVideoSource(url) {
       try {
         if (!url) return '';
         // Decode if encoded
         const decoded = decodeURIComponent(url);
-        if (decoded.startsWith('peertube://')) {
-          const parts = decoded.substring(11).split('/');
-          if (parts.length >= 2) {
-            const hostName = parts[0];
-            const videoId = parts[1];
-            // Prefer static HLS path to ensure correct Content-Type and CORS
-            return `https://${hostName}/static/streaming-playlists/hls/${videoId}/master.m3u8`;
-          }
-        }
+        // Avoid binding peertube:// as a media src; HLS will be used via playlistUrl
+        if (decoded.startsWith('peertube://')) return '';
         return decoded;
       } catch (e) {
         // Fallback to original URL on any error
         return url;
       }
-    },
-    // Normalize HLS URL to prefer /static path over /download
-    normalizeHlsUrl(u) {
-      try {
-        if (!u) return u;
-        const s = String(u);
-        if (/\.m3u8(\?|$)/.test(s) && s.includes('/download/streaming-playlists/hls/')) {
-          return s.replace('/download/streaming-playlists/hls/', '/static/streaming-playlists/hls/');
-        }
-        return s;
-      } catch (_) { return u; }
     },
     // Decide if we should use hls.js (MSE) instead of native
     shouldUseHlsJs(index, video) {
@@ -645,12 +627,14 @@ export default defineComponent({
         const urlStr = String(v?.url || '');
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         const nativeHls = el && typeof el.canPlayType === 'function' && el.canPlayType('application/vnd.apple.mpegurl');
-        // Only use HLS if URL explicitly points to an HLS playlist and MSE is supported
+        // Use API-provided playlistUrl whenever available
         const derived = this.getVideoSource(urlStr);
-        const hlsCandidateRaw = v?.videoInfo?.peertube?.hlsUrl
+        const hlsCandidate = v?.playlistUrl
+          || v?.hlsUrl
+          || v?.videoInfo?.peertube?.playlistUrl
+          || v?.videoInfo?.peertube?.hlsUrl
           || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
           || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
-        const hlsCandidate = this.normalizeHlsUrl(hlsCandidateRaw);
         return !!(hlsCandidate && typeof Hls !== 'undefined' && Hls && Hls.isSupported() && !nativeHls);
       } catch (_) { return false; }
     },
@@ -661,10 +645,12 @@ export default defineComponent({
         if (!v) return '';
         const urlStr = String(v.url || '');
         const derived = this.getVideoSource(urlStr);
-        const hlsCandidateRaw = v?.videoInfo?.peertube?.hlsUrl
+        const hlsCandidate = v?.playlistUrl
+          || v?.hlsUrl
+          || v?.videoInfo?.peertube?.playlistUrl
+          || v?.videoInfo?.peertube?.hlsUrl
           || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
           || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
-        const hlsCandidate = this.normalizeHlsUrl(hlsCandidateRaw);
         const el = this.$refs.videoElements?.[index] || this.$refs.videoElements;
         // If we'll use hls.js, do not bind a src so hls can take over cleanly
         if (hlsCandidate && this.shouldUseHlsJs(index, v)) return '';
@@ -796,15 +782,13 @@ export default defineComponent({
       if (!video) return;
       const urlStr = String(video?.url || '');
       const derived = this.getVideoSource(urlStr);
-      const raw = video?.videoInfo?.peertube?.hlsUrl
+      const hlsUrl = video?.playlistUrl
+        || video?.hlsUrl
+        || video?.videoInfo?.peertube?.playlistUrl
+        || video?.videoInfo?.peertube?.hlsUrl
         || (/\.m3u8(\?|$)/.test(derived) ? derived : null)
         || (/\.m3u8(\?|$)/.test(urlStr) ? urlStr : null);
-      if (!raw) return;
-      const primary = this.normalizeHlsUrl(raw);
-      const staticFallback = primary.includes('/static/streaming-playlists/hls/')
-        ? primary.replace('/static/streaming-playlists/hls/', '/download/streaming-playlists/hls/')
-        : primary.replace('/download/streaming-playlists/hls/', '/static/streaming-playlists/hls/');
-      const hlsUrl = primary;
+      if (!hlsUrl) return;
 
       const videoEl = this.$refs.videoElements?.[index] || this.$refs.videoElements;
       if (!videoEl) return;
